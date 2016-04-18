@@ -21,6 +21,22 @@ pub struct Lexer<'a> {
     scope_depth: u64,
 }
 
+fn get_position(text: &str, byte_offset: usize) -> (usize, usize) {
+    let text = &text[..byte_offset];
+    let mut line = 1;
+    let mut col = 1;
+    
+    for ch in text.chars() {
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(text: &'a str) -> Lexer<'a> {
         Lexer {
@@ -34,23 +50,7 @@ impl<'a> Lexer<'a> {
     }
     
     pub fn current_position(&self) -> (usize, usize) {
-        self.get_position(self.start)
-    }
-    
-    fn get_position(&self, byte_offset: usize) -> (usize, usize) {
-        let text = &self.text[..byte_offset];
-        let mut line = 1;
-        let mut col = 1;
-        
-        for ch in text.chars() {
-            if ch == '\n' {
-                line += 1;
-                col = 1;
-            } else {
-                col += 1;
-            }
-        }
-        (line, col)
+        get_position(self.text, self.start)
     }
     
     #[inline]
@@ -114,6 +114,36 @@ impl<'a> Token<'a> {
     }
 }
 
+fn show_unclosed(text: &str, start: usize) {
+    let (line, col) = get_position(text, start);
+    let line_text = text.lines().skip(line-1).next().unwrap();
+    println!("{}", line_text);
+    let mut pre = String::new();
+    let line_len = line_text.chars().count();
+    for _ in 0 .. col-1 {
+        pre.push(' ');
+    }
+    let mut post = String::new();
+    if col < line_len {
+        for _ in 0 .. (line_len - col) {
+            post.push('~');
+        }
+    }
+    println!("{}^{}", pre, post);
+}
+
+fn show_invalid_character(text: &str, pos: usize) {
+    let (line, col) = get_position(text, pos);
+    let line_text = text.lines().skip(line-1).next().unwrap();
+    println!("{}", line_text);
+    let mut pre = String::new();
+    let line_len = line_text.chars().count();
+    for _ in 0 .. col-1 {
+        pre.push(' ');
+    }
+    println!("{}^", pre);
+}
+
 #[derive(Debug)]
 pub enum LexerError {
     InvalidWhitespace { pos: usize },
@@ -124,6 +154,24 @@ pub enum LexerError {
     InvalidIntCharacter { start: usize, pos: usize },
     InvalidEscapeCharacter { start: usize, pos: usize },
     UnderscoreNotAfterNumber { start: usize, pos: usize },
+}
+impl LexerError {
+    pub fn show(&self, text: &str) {
+        use self::LexerError::*;
+        match *self {
+            UnclosedString { start } => {
+                let (line, col) = get_position(text, start);
+                println!("Unclosed string starting at {}:{} :", line, col);
+                show_unclosed(text, start);
+            }
+            InvalidEscapeCharacter { pos, .. } => {
+                let (line, col) = get_position(text, pos);
+                println!("Invalid escape character at {}:{} :", line, col);
+                show_invalid_character(text, pos);
+            }
+            _ => println!("Error: {:?}", *self),
+        }
+    }
 }
 
 enum LexerState {
@@ -150,7 +198,7 @@ impl<'a> Iterator for Lexer<'a> {
             return None;
         }
         let mut state = LexerState::Empty;
-        loop {
+        'state: loop {
             match state {
                 Empty => {
                     if let Some((i, ch)) = self.chars.next() {
@@ -410,7 +458,7 @@ impl<'a> Iterator for Lexer<'a> {
                                 literal: false, multiline: multiline, 
                                 escaped: true
                             };
-                            break;
+                            continue 'state;
                         }
                     }
                     self.finished = true;
@@ -425,6 +473,7 @@ impl<'a> Iterator for Lexer<'a> {
                                     literal: false, multiline: multiline,
                                     escaped: false
                                 };
+                                continue 'state;
                             }
                             'u' => {
                                 panic!("Should validate x4 unicode");

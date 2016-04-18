@@ -12,23 +12,9 @@ use std::fs::File;
 mod lexer;
 use lexer::Lexer;
 
-fn main() {
-    println!("T O M L !");
-    /*let mut file = File::open("samples/official.toml")
-        .expect("Sample file not found");
-    let mut source = String::new();
-    file.read_to_string(&mut source)
-        .expect("Could not read the sample");*/
-    //let toml = read_toml(&source);
-    //println!("Toml:\n{:?}", toml);
-    //println!("Scope: {:?}", read_scope("[hello]", 0));
-    let simple = r#"
-    [ hello  ] # lol
-    a = 2#3
-    b = "hello world"
-    "#;
+fn test_lexer(text: &str) {
     let mut out = String::new();
-    let mut lexer = Lexer::new(simple);
+    let mut lexer = Lexer::new(text);
     print!("{:?}: ", lexer.current_position());
     while let Some(res) = lexer.next() {
         match res {
@@ -37,11 +23,31 @@ fn main() {
                 out.push_str(token.as_str());
             }
             Err(err) => {
-                println!("Parse error: {:?}", err);
+                return err.show(text);
             }
         }
         print!("{:?}: ", lexer.current_position());
     }
-    assert_eq!(simple, &out);
+    assert_eq!(text, &out);
+    println!("Completely Preserved!");
+}
+
+fn main() {
+    println!("T O M L !");
+
+    let simple = r#"
+    [ hello  ] # lol
+    a = 2#3
+    b = "hello world"
+    "#;
+    test_lexer(simple);
+    
+    let mut hard_file = File::open("samples/hard_example.toml")
+        .expect("Sample file not found");
+    let mut hard_example = String::new();
+    hard_file.read_to_string(&mut hard_example)
+        .expect("Could not read the sample");
+    test_lexer(&hard_example);
+    
     println!("Done!");
 }
