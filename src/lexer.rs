@@ -133,6 +133,7 @@ enum LexerState {
     ReadingInt { was_number: bool, datetime_possible: bool },
     ReadingDatetime,
     ReadingFloat,
+    ReadingComment,
     ReadingFloatExponent { sign_pos: bool, was_number: bool },
     ReadingString { literal: bool, multiline: bool, escaped: bool },
 }
@@ -172,6 +173,9 @@ impl<'a> Iterator for Lexer<'a> {
                                 } else {
                                     return Some(Ok(SingleBracketOpen));
                                 }
+                            }
+                            '#' => {
+                                state = ReadingComment;
                             }
                             ']' => {
                                 self.start += 1;
@@ -501,6 +505,23 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 ReadingFloatExponent { sign_pos: false, was_number } => {
                     break;
+                }
+                ReadingComment => {
+                    while let Some(&(i, ch)) = self.chars.peek() {
+                        if self.next_is(i, "\r\n") {
+                            let part = &self.text[self.start..i];
+                            self.start = i;
+                            return Some(Ok(Comment(part)));
+                        } else if ch == '\n' {
+                            let part = &self.text[self.start..i];
+                            self.start = i;
+                            return Some(Ok(Comment(part)));
+                        } else {
+                            self.chars.next();
+                        }
+                    }
+                    self.finished = true;
+                    return Some(Ok(Comment(&self.text[self.start..])));
                 }
             }
         }

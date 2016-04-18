@@ -23,8 +23,8 @@ fn main() {
     //println!("Toml:\n{:?}", toml);
     //println!("Scope: {:?}", read_scope("[hello]", 0));
     let simple = r#"
-    [ hello  ]
-    a = 2
+    [ hello  ] # lol
+    a = 2#3
     b = "hello world"
     "#;
     let mut out = String::new();
