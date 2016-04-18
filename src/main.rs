@@ -13,7 +13,6 @@ mod lexer;
 use lexer::Lexer;
 
 fn main() {
-    use lexer::Token::*;
     println!("T O M L !");
     /*let mut file = File::open("samples/official.toml")
         .expect("Sample file not found");
@@ -28,12 +27,14 @@ fn main() {
     a = 2
     b = "hello world"
     "#;
+    let mut out = String::new();
     let mut lexer = Lexer::new(simple);
     print!("{:?}: ", lexer.current_position());
     while let Some(res) = lexer.next() {
         match res {
             Ok(token) => {
                 println!("Token: {:?}", token);
+                out.push_str(token.as_str());
             }
             Err(err) => {
                 println!("Parse error: {:?}", err);
@@ -41,5 +42,6 @@ fn main() {
         }
         print!("{:?}: ", lexer.current_position());
     }
+    assert_eq!(simple, &out);
     println!("Done!");
 }

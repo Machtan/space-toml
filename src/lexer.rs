@@ -1,5 +1,6 @@
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
+use std::io::Write;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
 
@@ -83,25 +84,56 @@ pub enum Token<'a> {
     Newline(&'a str),
     Key(&'a str), // Unquoted key
     String(&'a str),
+    MultilineString(&'a str),
+    Literal(&'a str),
+    MultilineLiteral(&'a str),
     DateTime(&'a str),
     Int(&'a str),
     Float(&'a str),
+    Bool(bool),
+}
+impl<'a> Token<'a> {
+    pub fn as_str(&self) -> &'a str {
+        use self::Token::*;
+        match *self {
+            Whitespace(s) | Comment(s) | Newline(s) | Key(s)
+            | String(s) | MultilineString(s) | Literal(s) | MultilineLiteral(s)
+            | DateTime(s) | Int(s) | Float(s) => s,
+            SingleBracketOpen => "[",
+            DoubleBracketOpen => "[[",
+            SingleBracketClose => "]",
+            DoubleBracketClose => "]]",
+            CurlyOpen => "{",
+            CurlyClose => "}",
+            Equals => "=",
+            Comma => ",",
+            Dot => ".",
+            Bool(true) => "true",
+            Bool(false) => "false",
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum LexerError {
-    InvalidWhitespace(char, (usize, usize)),
-    InvalidKeyCharacter(char, (usize, usize)),
+    InvalidWhitespace { pos: usize },
+    InvalidKeyCharacter { pos: usize },
+    UnclosedLiteral { start: usize },
+    UnclosedString { start: usize },
+    InvalidValueCharacter { start: usize, pos: usize },
+    InvalidIntCharacter { start: usize, pos: usize },
+    InvalidEscapeCharacter { start: usize, pos: usize },
+    UnderscoreNotAfterNumber { start: usize, pos: usize },
 }
 
 enum LexerState {
     Empty,
     ReadingWhitespace { next_index: usize },
     ReadingKey,
-    ReadingInt,
-    ReadingIntOrDatetime,
+    ReadingInt { was_number: bool, datetime_possible: bool },
+    ReadingDatetime,
     ReadingFloat,
-    ReadingFloatExponent,
+    ReadingFloatExponent { sign_pos: bool, was_number: bool },
     ReadingString { literal: bool, multiline: bool, escaped: bool },
 }
 
@@ -178,9 +210,7 @@ impl<'a> Iterator for Lexer<'a> {
                                     return Some(Ok(Newline(part)));
                                 } else {
                                     self.finished = true;
-                                    return Some(Err(InvalidWhitespace(
-                                        '\r', self.get_position(i)
-                                    )));
+                                    return Some(Err(InvalidWhitespace { pos: i }));
                                 }
                             }
                             '\n' => {
@@ -197,7 +227,6 @@ impl<'a> Iterator for Lexer<'a> {
                                 return Some(Ok(Equals));
                             }
                             '"' => {
-                                self.start += 1;
                                 if self.next_is(self.start + 1, "\"\"") {
                                     self.chars.next();
                                     self.chars.next();
@@ -212,7 +241,6 @@ impl<'a> Iterator for Lexer<'a> {
                                 }
                             },
                             '\'' => {
-                                self.start += 1;
                                 if self.next_is(self.start + 1, "\'\'") {
                                     self.chars.next();
                                     self.chars.next();
@@ -238,11 +266,49 @@ impl<'a> Iterator for Lexer<'a> {
                                 match self.scope {
                                     LexerScope::Value => {
                                         match ch {
-                                            '-' | '+' | '0' ... '9' => {
-                                                state = ReadingIntOrDatetime;
+                                            't' => {
+                                                if self.next_is(i, "true") {
+                                                    for i in 0..3 {
+                                                        self.chars.next();
+                                                    }
+                                                    self.start = i + 4;
+                                                    return Some(Ok(Bool(true)));
+                                                }
+                                                self.finished = true;
+                                                return Some(Err(InvalidValueCharacter {
+                                                    start: self.start, pos: i
+                                                }));
+                                            }
+                                            'f' => {
+                                                if self.next_is(i, "false") {
+                                                    for i in 0..4 {
+                                                        self.chars.next();
+                                                    }
+                                                    self.start = i + 5;
+                                                    return Some(Ok(Bool(false)));
+                                                }
+                                                self.finished = true;
+                                                return Some(Err(InvalidValueCharacter {
+                                                    start: self.start, pos: i
+                                                }));
+                                            }
+                                            '-' | '+' => {
+                                                state = ReadingInt { 
+                                                    was_number: false, 
+                                                    datetime_possible: false
+                                                };
+                                            }
+                                            '0' ... '9' => {
+                                                state = ReadingInt {
+                                                    was_number: true,
+                                                    datetime_possible: true
+                                                };
                                             }
                                             ch => {
-                                                unimplemented!();
+                                                self.finished = true;
+                                                return Some(Err(InvalidValueCharacter {
+                                                    start: self.start, pos: i
+                                                }));
                                             }
                                         }
                                     }
@@ -253,9 +319,9 @@ impl<'a> Iterator for Lexer<'a> {
                                                 state = ReadingKey;
                                             }
                                             ch => {
-                                                return Some(Err(InvalidKeyCharacter(
-                                                    ch, self.current_position()
-                                                )));
+                                                return Some(Err(InvalidKeyCharacter {
+                                                    pos: i
+                                                }));
                                             }
                                         }
                                     }
@@ -284,6 +350,12 @@ impl<'a> Iterator for Lexer<'a> {
                             'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {
                                 self.chars.next();
                             }
+                            ',' | ']' | ' ' | '\t' | '\n' | '#' => {
+                                let part = &self.text[self.start..i];
+                                self.start = i;
+                                state = Empty;
+                                return Some(Ok(Key(part)));
+                            }
                             ch => {
                                 let part = &self.text[self.start..i];
                                 self.start = i;
@@ -297,24 +369,137 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 }
                 ReadingString { literal: true , multiline, .. } => {
-                    break;
+                    while let Some((i, ch)) = self.chars.next() {
+                        if multiline && self.next_is(i, "'''") {
+                            self.chars.next();
+                            self.chars.next();
+                            let part = &self.text[self.start .. i+3];
+                            self.start = i + 3;
+                            state = Empty;
+                            return Some(Ok(MultilineLiteral(part)));
+                        } else if ch == '\'' && (! multiline) {
+                            let part = &self.text[self.start .. i+1];
+                            self.start = i + 1;
+                            state = Empty;
+                            return Some(Ok(Literal(part)));
+                        }
+                    }
+                    self.finished = true;
+                    return Some(Err(UnclosedLiteral { start: self.start }));
                 }
                 ReadingString { literal: false , multiline, escaped: false } => {
-                    break;
+                    while let Some((i, ch)) = self.chars.next() {
+                        if multiline && self.next_is(i, "\"\"\"") {
+                            self.chars.next();
+                            self.chars.next();
+                            let part = &self.text[self.start .. i+3];
+                            self.start = i + 3;
+                            state = Empty;
+                            return Some(Ok(MultilineString(part)));
+                        } else if ch == '"' && (! multiline) {
+                            let part = &self.text[self.start .. i+1];
+                            self.start = i + 1;
+                            state = Empty;
+                            return Some(Ok(String(part)));
+                        } else if ch == '\\' {
+                            state = ReadingString { 
+                                literal: false, multiline: multiline, 
+                                escaped: true
+                            };
+                            break;
+                        }
+                    }
+                    self.finished = true;
+                    return Some(Err(UnclosedString { start: self.start }));
                 }
                 ReadingString { literal: false , multiline, escaped: true } => {
-                    break;
+                    while let Some((i, ch)) = self.chars.next() {
+                        match ch {
+                            ' ' | '\t' | '\n' => {}
+                            'b' | 't' | 'n' | 'f' | 'r' | '"' | '\\' => {
+                                state = ReadingString {
+                                    literal: false, multiline: multiline,
+                                    escaped: false
+                                };
+                            }
+                            'u' => {
+                                panic!("Should validate x4 unicode");
+                            } 
+                            'U' => {
+                                panic!("Should validate x8 unicode");
+                            }
+                            _ => {
+                                self.finished = true;
+                                return Some(Err(InvalidEscapeCharacter {
+                                    start: self.start, pos: i
+                                }));
+                            }
+                        }
+                    }
+                    self.finished = true;
+                    return Some(Err(UnclosedString { start: self.start }));
                 }
-                ReadingIntOrDatetime => {
-                    break;
+                ReadingInt { was_number, datetime_possible } => {
+                    if let Some(&(i, ch)) = self.chars.peek() {
+                        match ch {
+                            '0' ... '9' => {
+                                state = ReadingInt { 
+                                    was_number: true, 
+                                    datetime_possible: datetime_possible
+                                };
+                                self.chars.next();
+                            }
+                            '-' if datetime_possible => {
+                                state = ReadingDatetime
+                            }
+                            '.' => {
+                                self.chars.next();
+                                state = ReadingFloat;
+                            }
+                            'e' | 'E' => {
+                                self.chars.next();
+                                state = ReadingFloatExponent {
+                                    sign_pos: true, was_number: false
+                                };
+                            }
+                            '_' if was_number => {
+                                state = ReadingInt {
+                                    was_number: false,
+                                    datetime_possible: false,
+                                };
+                                self.chars.next();
+                            }
+                            '_' => {
+                                self.finished = true;
+                                return Some(Err(UnderscoreNotAfterNumber {
+                                    start: self.start, pos: i
+                                }));
+                            }
+                            ',' | ' ' | '\t' | '\n' | ']' | '#' => {
+                                let part = &self.text[self.start..i];
+                                self.start = i;
+                                state = Empty;
+                                return Some(Ok(Int(part)));
+                            }
+                            ch => {
+                                self.finished = true;
+                                return Some(Err(InvalidIntCharacter {
+                                    start: self.start, pos: i
+                                }));
+                            }
+                        }
+                    }
                 }
-                ReadingInt => {
+                ReadingDatetime => {
                     break;
                 }
                 ReadingFloat => {
                     break;
                 }
-                ReadingFloatExponent => {
+                ReadingFloatExponent { sign_pos: true, was_number } => {
+                    break;
+                }
+                ReadingFloatExponent { sign_pos: false, was_number } => {
                     break;
                 }
             }
