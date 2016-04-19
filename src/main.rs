@@ -15,18 +15,18 @@ use lexer::Lexer;
 fn test_lexer(text: &str) {
     let mut out = String::new();
     let mut lexer = Lexer::new(text);
-    //print!("{:?}: ", lexer.current_position());
+    print!("{:?}: ", lexer.current_position());
     while let Some(res) = lexer.next() {
         match res {
             Ok(token) => {
-                //println!("{:?}", token);
+                println!("{:?}", token);
                 out.push_str(token.as_str());
             }
             Err(err) => {
                 return err.show(text);
             }
         }
-        //print!("{:?}: ", lexer.current_position());
+        print!("{:?}: ", lexer.current_position());
     }
     assert_eq!(text, &out);
     println!("Completely Preserved!");
@@ -39,6 +39,14 @@ fn main() {
     [ hello  ] # lol
     a = 2#3
     b = "hello world"
+    
+    [ bob. "something" ]
+    flt7 = 6.626e-34
+    bool = false # it's true though!
+    arr = [ 1, 2   ,    3 
+    ,]
+    
+    inline = { alice = "some", key = 2 }
     "#;
     test_lexer(simple);
     
@@ -47,14 +55,14 @@ fn main() {
     let mut hard_example = String::new();
     hard_file.read_to_string(&mut hard_example)
         .expect("Could not read the sample");
-    test_lexer(&hard_example);
+    //test_lexer(&hard_example);
     
     let mut hard_file = File::open("samples/hard_example_unicode.toml")
         .expect("Sample file not found");
     let mut hard_example = String::new();
     hard_file.read_to_string(&mut hard_example)
         .expect("Could not read the sample");
-    test_lexer(&hard_example);
+    //test_lexer(&hard_example);
     
     println!("Done!");
 }

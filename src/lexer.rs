@@ -11,16 +11,6 @@ enum LexerScope {
     Value,
 }
 
-#[derive(Debug)]
-pub struct Lexer<'a> {
-    text: &'a str,
-    chars: CharStream<'a>,
-    start: usize,
-    finished: bool,
-    scope: LexerScope,
-    scope_depth: i64,
-}
-
 fn get_position(text: &str, byte_offset: usize) -> (usize, usize) {
     let text = &text[..byte_offset];
     let mut line = 1;
@@ -37,6 +27,16 @@ fn get_position(text: &str, byte_offset: usize) -> (usize, usize) {
     (line, col)
 }
 
+#[derive(Debug)]
+pub struct Lexer<'a> {
+    text: &'a str,
+    chars: CharStream<'a>,
+    start: usize,
+    finished: bool,
+    scope: LexerScope,
+    scope_stack: Vec<char>,
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(text: &'a str) -> Lexer<'a> {
         Lexer {
@@ -45,7 +45,7 @@ impl<'a> Lexer<'a> {
             start: 0,
             finished: false,
             scope: LexerScope::Key,
-            scope_depth: 0,
+            scope_stack: Vec::new(),
         }
     }
     
@@ -64,6 +64,20 @@ impl<'a> Lexer<'a> {
             c == ch
         } else {
             false
+        }
+    }
+    
+    #[inline]
+    fn scope_is_table(&self) -> bool {
+        if self.scope_stack.is_empty() {
+            return false;
+        } else {
+            let last = self.scope_stack.len() - 1;
+            if self.scope_stack[last] == '{' {
+                true
+            } else {
+                false
+            }
         }
     }
     
@@ -130,35 +144,54 @@ impl<'a> Lexer<'a> {
     #[inline]
     fn read_bracket(&mut self, open: bool) -> Result<Token<'a>, LexerError> {
         use self::Token::*;
+        use self::LexerError::*;
+        
         self.start += 1;
-        self.scope_depth += if open { 1 } else { -1 };
-        if self.scope_depth < 0 {
-            self.scope_depth = 0;
-        }
         // Only check for array of tables when in key scope
         let ch = if open { '[' } else { ']' };
         if let LexerScope::Key = self.scope {
             if self.peek_is(ch) {
                 self.chars.next(); // eat it
                 self.start += 1;
-                return Ok(if open { 
-                    DoubleBracketOpen
+                if open { 
+                    return Ok(DoubleBracketOpen);
                 } else { 
-                    DoubleBracketClose
-                });
+                    return Ok(DoubleBracketClose);
+                }
             } else {
-                return Ok(if open {
-                    SingleBracketOpen
+                if open {
+                    //print!("Open: stack: {:?} -> ", self.scope_stack);
+                    self.scope_stack.push('[');
+                    //println!("{:?}", self.scope_stack);
+                    return Ok(SingleBracketOpen);
                 } else {
-                    SingleBracketClose
-                });
+                    //print!("Close: stack: {:?} -> ", self.scope_stack);
+                    if self.scope_stack.is_empty() {
+                        //println!("Error!");
+                        self.finished = true;
+                        return Err(UnmatchedClosingBrace { pos: self.start-1 });
+                    } else {
+                        self.scope_stack.pop();
+                        //println!("{:?}", self.scope_stack);
+                    }
+                    return Ok(SingleBracketClose);
+                }
             }
         } else {
-            return Ok(if open {
-                SingleBracketOpen
+            if open {
+                self.scope_stack.push('[');
+                return Ok(SingleBracketOpen);
             } else {
-                SingleBracketClose
-            });
+                if self.scope_stack.is_empty() {
+                    //println!("Error!");
+                    self.finished = true;
+                    return Err(UnmatchedClosingBrace { pos: self.start-1 });
+                } else {
+                    self.scope_stack.pop();
+                    //println!("{:?}", self.scope_stack);
+                }
+                return Ok(SingleBracketClose);
+            }
         }
     }
     
@@ -255,11 +288,14 @@ impl<'a> Lexer<'a> {
                 }
                 '.' => {
                     self.chars.next();
-                    return self.read_float(false, false, false);
+                    return self.read_float(false, false);
                 }
                 'e' | 'E' => {
                     self.chars.next();
-                    return self.read_float(true, true, false);
+                    if self.peek_is('-') || self.peek_is('+') {
+                        self.chars.next();
+                    }
+                    return self.read_float(true, false);
                 }
                 '_' if was_number => {
                     self.chars.next();
@@ -289,10 +325,51 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_float(&mut self, mut exponent_found: bool, mut at_sign: bool, 
-            mut was_number: bool)
+    fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
             -> Result<Token<'a>, LexerError> {
-        panic!("No float support yet!");
+        use self::Token::*;
+        use self::LexerError::*;
+        
+        while let Some(&(i, ch)) = self.chars.peek() {
+            match ch {
+                'e' | 'E' if exponent_found => {
+                    return Err(InvalidFloatCharacter { start: self.start, pos: i });
+                }
+                'e' | 'E' => {
+                    self.chars.next();
+                    if self.peek_is('-') || self.peek_is('+') {
+                        self.chars.next();
+                    }
+                    exponent_found = true;
+                }
+                '0' ... '9' => {
+                    self.chars.next();
+                    was_number = true;
+                }
+                '_' if was_number => {
+                    self.chars.next();
+                    was_number = false;
+                }
+                '_' => {
+                    self.finished = true;
+                    return Err(UnderscoreNotAfterNumber {
+                        start: self.start, pos: i
+                    });
+                }
+                ',' | ' ' | '\t' | '\n' | ']' | '#' => {
+                    let part = &self.text[self.start..i];
+                    self.start = i;
+                    return Ok(Float(part));
+                }
+                ch => {
+                    return Err(InvalidFloatCharacter {
+                        start: self.start, pos: i
+                    });
+                }
+            }
+        }
+        let part = &self.text[self.start..];
+        Ok(Float(part))
     }
     
     #[inline]
@@ -419,15 +496,52 @@ fn show_invalid_character(text: &str, pos: usize) {
     println!("{}^", pre);
 }
 
+fn show_invalid_part(text: &str, start: usize, pos: usize) {
+    let (sy, sx) = get_position(text, start);
+    let (py, px) = get_position(text, pos);
+    for ly in sy..py+1 { 
+        let line_text = text.lines().skip(ly-1).next().unwrap();
+        let line_len = line_text.chars().count();
+        println!("{}", line_text);
+        if sy == py {
+            let mut pre = String::new();
+            for _ in 0.. sx-1 {
+                pre.push(' ');
+            }
+            for _ in sx-1 .. px-1 {
+                pre.push('~');
+            }
+            println!("{}^", pre);
+        } else if ly == sy {
+            let mut pre = String::new();
+            for _ in 0..sx-1 {
+                pre.push(' ');
+            }
+            for _ in sx-1..line_len {
+                pre.push('~');
+            }
+            println!("{}", pre);
+        } else if ly == py {
+            let mut pre = String::new();
+            for _ in 0..px-1 {
+                pre.push('~');
+            }
+            println!("{}^", pre);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum LexerError {
     InvalidWhitespace { pos: usize },
-    InvalidKeyCharacter { pos: usize },
     UnclosedLiteral { start: usize },
     UnclosedString { start: usize },
+    UnmatchedClosingBrace { pos: usize },
+    InvalidKeyCharacter { pos: usize },
     InvalidValueCharacter { start: usize, pos: usize },
     InvalidIntCharacter { start: usize, pos: usize },
     InvalidEscapeCharacter { start: usize, pos: usize },
+    InvalidFloatCharacter { start: usize, pos: usize },
     UnderscoreNotAfterNumber { start: usize, pos: usize },
 }
 impl LexerError {
@@ -439,9 +553,39 @@ impl LexerError {
                 println!("Unclosed string starting at {}:{} :", line, col);
                 show_unclosed(text, start);
             }
+            UnclosedLiteral { start } => {
+                let (line, col) = get_position(text, start);
+                println!("Unclosed string starting at {}:{} :", line, col);
+                show_unclosed(text, start);
+            }
             InvalidEscapeCharacter { pos, .. } => {
                 let (line, col) = get_position(text, pos);
                 println!("Invalid escape character at {}:{} :", line, col);
+                show_invalid_character(text, pos);
+            }
+            InvalidValueCharacter { start, pos } => {
+                let (line, col) = get_position(text, pos);
+                println!("Invalid character in value at {}:{} :", line, col);
+                show_invalid_part(text, start, pos);
+            }
+            InvalidIntCharacter { start, pos } => {
+                let (line, col) = get_position(text, pos);
+                println!("Invalid character in integer at {}:{} :", line, col);
+                show_invalid_part(text, start, pos);
+            }
+            InvalidFloatCharacter { start, pos } => {
+                let (line, col) = get_position(text, pos);
+                println!("Invalid character in float at {}:{} :", line, col);
+                show_invalid_part(text, start, pos);
+            }
+            UnmatchedClosingBrace { pos } => {
+                let (line, col) = get_position(text, pos);
+                println!("Unmatched brace found at {}:{} :", line, col);
+                show_invalid_character(text, pos);
+            }
+            InvalidKeyCharacter { pos } => {
+                let (line, col) = get_position(text, pos);
+                println!("Invalid key character at {}:{} :", line, col);
                 show_invalid_character(text, pos);
             }
             _ => println!("Error: {:?}", *self),
@@ -476,9 +620,19 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 '{' => {
                     self.start += 1;
+                    self.scope_stack.push('{');
+                    self.scope = LexerScope::Key;
                     return Some(Ok(CurlyOpen));
                 }
                 '}' => {
+                    if self.scope_stack.is_empty() {
+                        self.finished = true;
+                        return Some(Err(UnmatchedClosingBrace {
+                            pos: self.start-1
+                        }));
+                    } else {
+                        self.scope_stack.pop();
+                    }
                     self.start += 1;
                     return Some(Ok(CurlyClose));
                 }
@@ -489,7 +643,7 @@ impl<'a> Iterator for Lexer<'a> {
                         let part = &self.text[self.start..self.start+2];
                         self.start += 1;
                         // New line, new key
-                        if self.scope_depth == 0 {
+                        if self.scope_stack.is_empty() {
                             self.scope = LexerScope::Key; 
                         }
                         return Some(Ok(Newline(part)));
@@ -501,7 +655,7 @@ impl<'a> Iterator for Lexer<'a> {
                 '\n' => {
                     self.start += 1;
                     // New line, new key
-                    if self.scope_depth == 0 {
+                    if self.scope_stack.is_empty() {
                         self.scope = LexerScope::Key; 
                     }
                     return Some(Ok(Newline("\n")));
@@ -518,6 +672,9 @@ impl<'a> Iterator for Lexer<'a> {
                     return Some(self.read_string(true));
                 }
                 ',' => {
+                    if self.scope_is_table() {
+                        self.scope = LexerScope::Key;
+                    }
                     self.start += 1;
                     return Some(Ok(Comma));
                 }
