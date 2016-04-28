@@ -10,23 +10,32 @@ use std::io::Read;
 use std::fs::File;
 
 mod lexer;
+mod structure;
+mod parser;
+
 use lexer::Lexer;
 
-fn test_lexer(text: &str) {
+fn test_lexer(text: &str, verbose: bool) {
     let mut out = String::new();
     let mut lexer = Lexer::new(text);
-    print!("{:?}: ", lexer.current_position());
+    if verbose {
+        print!("{:03}:{:03} : ", lexer.current_position().0, lexer.current_position().1);
+    }
     while let Some(res) = lexer.next() {
         match res {
             Ok(token) => {
-                println!("{:?}", token);
+                if verbose {
+                    println!("{:?}", token);
+                }
                 out.push_str(token.as_str());
             }
             Err(err) => {
                 return err.show(text);
             }
         }
-        print!("{:?}: ", lexer.current_position());
+        if verbose {
+            print!("{:03}:{:03} : ", lexer.current_position().0, lexer.current_position().1);
+        }
     }
     assert_eq!(text, &out);
     println!("Completely Preserved!");
@@ -48,21 +57,21 @@ fn main() {
     
     inline = { alice = "some", key = 2 }
     "#;
-    test_lexer(simple);
+    test_lexer(simple, false);
     
     let mut hard_file = File::open("samples/hard_example.toml")
         .expect("Sample file not found");
     let mut hard_example = String::new();
     hard_file.read_to_string(&mut hard_example)
         .expect("Could not read the sample");
-    //test_lexer(&hard_example);
+    test_lexer(&hard_example, false);
     
     let mut hard_file = File::open("samples/hard_example_unicode.toml")
         .expect("Sample file not found");
     let mut hard_example = String::new();
     hard_file.read_to_string(&mut hard_example)
         .expect("Could not read the sample");
-    //test_lexer(&hard_example);
+    test_lexer(&hard_example, false);
     
     println!("Done!");
 }
