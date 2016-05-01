@@ -6,6 +6,81 @@ use chrono::{DateTime, UTC};
 use std::str::FromStr;
 use std::borrow::Cow;
 
+/// Parses and cleans the given TOML string.
+pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a, str> {
+    if literal {
+        return Cow::Borrowed(text);
+    }
+    let mut string = String::new();
+    let mut escaped = false;
+    let mut escaped_whitespace = false;
+    let mut chars = text.char_indices().peekable();
+    if multiline { // Ignore first newline in multiline strings
+        if let Some(&(_, '\n')) = chars.peek() {
+            chars.next();
+        }
+    }
+    while let Some((i, ch)) = chars.next() {
+        if escaped {
+            match ch {
+                ch if ch.is_whitespace() => {
+                    escaped_whitespace = true;
+                },
+                'n' => {
+                    string.push('\n');
+                    escaped = false;
+                }
+                't' => {
+                    string.push('\t');
+                    escaped = false;
+                }
+                'b' => {
+                    string.push(0x0008 as char);
+                    escaped = false;
+                }
+                'f' => {
+                    string.push(0x000C as char);
+                    escaped = false;
+                }
+                '"' => {
+                    string.push('"');
+                    escaped = false;
+                }
+                '\\' => {
+                    string.push('\\');
+                    escaped = false;
+                }
+                'u' => {
+                    for i in 0..4 {
+                        chars.next();
+                    }
+                    escaped = false;
+                }
+                'U' => {
+                    for i in 0..8 {
+                        chars.next();
+                    }
+                    escaped = false;
+                }
+                ch if escaped_whitespace => {
+                    string.push(ch);
+                    escaped = false;
+                }
+                _ => panic!("Invalid escape character found when parsing (lexer error)"),
+            }
+        } else {
+            if ch == '\\' {
+                escaped = true;
+                escaped_whitespace = false;
+            } else {
+                string.push(ch);
+            }
+        }
+    }
+    
+    Cow::Owned(string)
+}
+
 #[derive(Debug)]
 enum ScopeItem<'a> {
     Space(&'a str),
@@ -112,6 +187,23 @@ enum TableItem<'a> {
 pub enum TomlKey<'a> {
     Plain(&'a str),
     String { text: &'a str, literal: bool, multiline: bool },
+}
+impl<'a> TomlKey<'a> {
+    pub fn show(&self) {
+        use self::TomlKey::*;
+        match *self {
+            Plain(text) => println!("{}", text),
+            String { text, literal, multiline } => {
+                let clean = clean_string(text, literal, multiline);
+                match (literal, multiline) {
+                    (true, true) => println!("'''{}'''", clean),
+                    (true, false) => println!("'{}'", clean),
+                    (false, true) => println!(r#""""{}""""#, clean),
+                    (false, false) => println!(r#""{}""#, clean)
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -1,6 +1,7 @@
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
 use std::io::Write;
+use debug;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
 
@@ -9,22 +10,6 @@ type CharStream<'a> = Peekable<CharIndices<'a>>;
 enum LexerScope {
     Key,
     Value,
-}
-
-fn get_position(text: &str, byte_offset: usize) -> (usize, usize) {
-    let text = &text[..byte_offset];
-    let mut line = 1;
-    let mut col = 1;
-    
-    for ch in text.chars() {
-        if ch == '\n' {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-    (line, col)
 }
 
 #[derive(Debug)]
@@ -50,7 +35,7 @@ impl<'a> Lexer<'a> {
     }
     
     pub fn current_position(&self) -> (usize, usize) {
-        get_position(self.text, self.start)
+        debug::get_position(self.text, self.start)
     }
     
     #[inline]
@@ -83,7 +68,8 @@ impl<'a> Lexer<'a> {
     
     #[inline]
     fn read_whitespace(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
+        let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
                 ' ' | '\t' => {
@@ -92,16 +78,17 @@ impl<'a> Lexer<'a> {
                 ch => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Whitespace(part));
+                    return Ok(Token::new(start, Whitespace(part)));
                 }
             }
         }
-        return Ok(Whitespace(&self.text[self.start..]));
+        return Ok(Token::new(start, Whitespace(&self.text[self.start..])));
     }
     
     #[inline]
     fn read_key(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
+        let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
                 'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {
@@ -110,42 +97,43 @@ impl<'a> Lexer<'a> {
                 ',' | ']' | ' ' | '\t' | '\n' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Key(part));
+                    return Ok(Token::new(start, Key(part)));
                 }
                 ch => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Key(part));
+                    return Ok(Token::new(start, Key(part)));
                 }
             }
         }
-        return Ok(Key(&self.text[self.start..]));
+        return Ok(Token::new(start, Key(&self.text[self.start..])));
     }
     
     #[inline]
     fn read_comment(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
+        let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             if self.next_is(i, "\r\n") {
                 let part = &self.text[self.start..i];
                 self.start = i;
-                return Ok(Comment(part));
+                return Ok(Token::new(start, Comment(part)));
             } else if ch == '\n' {
                 let part = &self.text[self.start..i];
                 self.start = i;
-                return Ok(Comment(part));
+                return Ok(Token::new(start, Comment(part)));
             } else {
                 self.chars.next();
             }
         }
-        return Ok(Comment(&self.text[self.start..]));
+        return Ok(Token::new(start, Comment(&self.text[self.start..])));
     }
     
     #[inline]
     fn read_bracket(&mut self, open: bool) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
         use self::LexerError::*;
-        
+        let start = self.start;
         self.start += 1;
         // Only check for array of tables when in key scope
         let ch = if open { '[' } else { ']' };
@@ -154,16 +142,16 @@ impl<'a> Lexer<'a> {
                 self.chars.next(); // eat it
                 self.start += 1;
                 if open { 
-                    return Ok(DoubleBracketOpen);
+                    return Ok(Token::new(start, DoubleBracketOpen));
                 } else { 
-                    return Ok(DoubleBracketClose);
+                    return Ok(Token::new(start, DoubleBracketClose));
                 }
             } else {
                 if open {
                     //print!("Open: stack: {:?} -> ", self.scope_stack);
                     self.scope_stack.push('[');
                     //println!("{:?}", self.scope_stack);
-                    return Ok(SingleBracketOpen);
+                    return Ok(Token::new(start, SingleBracketOpen));
                 } else {
                     //print!("Close: stack: {:?} -> ", self.scope_stack);
                     if self.scope_stack.is_empty() {
@@ -174,13 +162,13 @@ impl<'a> Lexer<'a> {
                         self.scope_stack.pop();
                         //println!("{:?}", self.scope_stack);
                     }
-                    return Ok(SingleBracketClose);
+                    return Ok(Token::new(start, SingleBracketClose));
                 }
             }
         } else {
             if open {
                 self.scope_stack.push('[');
-                return Ok(SingleBracketOpen);
+                return Ok(Token::new(start, SingleBracketOpen));
             } else {
                 if self.scope_stack.is_empty() {
                     //println!("Error!");
@@ -190,15 +178,16 @@ impl<'a> Lexer<'a> {
                     self.scope_stack.pop();
                     //println!("{:?}", self.scope_stack);
                 }
-                return Ok(SingleBracketClose);
+                return Ok(Token::new(start, SingleBracketClose));
             }
         }
     }
     
     #[inline]
     fn read_string(&mut self, literal: bool) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
         use self::LexerError::*;
+        let start = self.start;
         let mut escaped = false;
         let multiline = if ! literal {
             if self.next_is(self.start + 1, "\"\"") {
@@ -224,15 +213,15 @@ impl<'a> Lexer<'a> {
                     self.chars.next();
                     let part = &self.text[self.start+3 .. i]; // Remove apostrophes
                     self.start = i + 3;
-                    return Ok(String { 
+                    return Ok(Token::new(start, String { 
                         text: part, literal: true, multiline: true
-                    });
+                    }));
                 } else if ch == '\'' && (! multiline) {
                     let part = &self.text[self.start+1 .. i];
                     self.start = i + 1;
-                    return Ok(String { 
+                    return Ok(Token::new(start, String { 
                         text: part, literal: true, multiline: false
-                    });
+                    }));
                 }
             }
             Err(UnclosedLiteral { start: self.start })
@@ -244,15 +233,15 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                         let part = &self.text[self.start+3 .. i];
                         self.start = i + 3;
-                        return Ok(String { 
+                        return Ok(Token::new(start, String { 
                             text: part, literal: false, multiline: true
-                        });
+                        }));
                     } else if ch == '"' && (! multiline) {
                         let part = &self.text[self.start+1 .. i];
                         self.start = i + 1;
-                        return Ok(String { 
+                        return Ok(Token::new(start, String { 
                             text: part, literal: false, multiline: false
-                        });
+                        }));
                     } else if ch == '\\' {
                         escaped = true;
                     }
@@ -263,10 +252,16 @@ impl<'a> Lexer<'a> {
                             escaped = false;
                         }
                         'u' => {
-                            panic!("Should validate x4 unicode");
+                            println!("Should validate x4 unicode");
+                            for i in 0..4 {
+                                self.chars.next();
+                            }
                         } 
                         'U' => {
-                            panic!("Should validate x8 unicode");
+                            println!("Should validate x8 unicode");
+                            for i in 0..8 {
+                                self.chars.next();
+                            }
                         }
                         _ => {
                             return Err(InvalidEscapeCharacter {
@@ -283,8 +278,9 @@ impl<'a> Lexer<'a> {
     #[inline]
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
             -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
         use self::LexerError::*;
+        let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
                 '0' ... '9' => {
@@ -319,7 +315,7 @@ impl<'a> Lexer<'a> {
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Int(part));
+                    return Ok(Token::new(start, Int(part)));
                 }
                 ch => {
                     return Err(InvalidIntCharacter {
@@ -329,14 +325,15 @@ impl<'a> Lexer<'a> {
             }
         }
         let part = &self.text[self.start..];
-        Ok(Int(part))
+        Ok(Token::new(start, Int(part)))
     }
     
     #[inline]
     fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
             -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
         use self::LexerError::*;
+        let start = self.start;
         
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -367,7 +364,7 @@ impl<'a> Lexer<'a> {
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Float(part));
+                    return Ok(Token::new(start, Float(part)));
                 }
                 ch => {
                     return Err(InvalidFloatCharacter {
@@ -377,13 +374,14 @@ impl<'a> Lexer<'a> {
             }
         }
         let part = &self.text[self.start..];
-        Ok(Float(part))
+        Ok(Token::new(start, Float(part)))
     }
     
     #[inline]
     fn read_value(&mut self, i: usize, ch: char) -> Result<Token<'a>, LexerError> {
-        use self::Token::*;
+        use self::TokenData::*;
         use self::LexerError::*;
+        let start = self.start;
         
         match ch {
             't' => {
@@ -392,7 +390,7 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                     }
                     self.start = i + 4;
-                    return Ok(Bool(true));
+                    return Ok(Token::new(start, Bool(true)));
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
@@ -405,7 +403,7 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                     }
                     self.start = i + 5;
-                    return Ok(Bool(false));
+                    return Ok(Token::new(start, Bool(false)));
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
@@ -429,7 +427,7 @@ impl<'a> Lexer<'a> {
 }
 
 #[derive(Debug)]
-pub enum Token<'a> {
+pub enum TokenData<'a> {
     Whitespace(&'a str),
     SingleBracketOpen,
     DoubleBracketOpen,
@@ -449,10 +447,27 @@ pub enum Token<'a> {
     Float(&'a str),
     Bool(bool),
 }
+
+#[derive(Debug)]
+pub struct Token<'a> {
+    pub start: usize,
+    pub data: TokenData<'a>,
+}
+
 impl<'a> Token<'a> {
+    fn new(start: usize, data: TokenData<'a>) -> Token<'a> {
+        Token {
+            start: start, data: data
+        }
+    }
+    
+    pub fn len(&self) -> usize {
+        unimplemented!();
+    }
+    
     pub fn write(&self, out: &mut String) {
-        use self::Token::*;
-        match *self {
+        use self::TokenData::*;
+        match self.data {
             Whitespace(s) | Comment(s) | Newline(s) | Key(s)
             | DateTime(s) | Int(s) | Float(s) => out.push_str(s),
             SingleBracketOpen => out.push_str("["),
@@ -485,70 +500,7 @@ impl<'a> Token<'a> {
     }
 }
 
-fn show_unclosed(text: &str, start: usize) {
-    let (line, col) = get_position(text, start);
-    let line_text = text.lines().skip(line-1).next().unwrap();
-    println!("{}", line_text);
-    let mut pre = String::new();
-    let line_len = line_text.chars().count();
-    for _ in 0 .. col-1 {
-        pre.push(' ');
-    }
-    let mut post = String::new();
-    if col < line_len {
-        for _ in 0 .. (line_len - col) {
-            post.push('~');
-        }
-    }
-    println!("{}^{}", pre, post);
-}
 
-fn show_invalid_character(text: &str, pos: usize) {
-    let (line, col) = get_position(text, pos);
-    let line_text = text.lines().skip(line-1).next().unwrap();
-    println!("{}", line_text);
-    let mut pre = String::new();
-    let line_len = line_text.chars().count();
-    for _ in 0 .. col-1 {
-        pre.push(' ');
-    }
-    println!("{}^", pre);
-}
-
-fn show_invalid_part(text: &str, start: usize, pos: usize) {
-    let (sy, sx) = get_position(text, start);
-    let (py, px) = get_position(text, pos);
-    for ly in sy..py+1 { 
-        let line_text = text.lines().skip(ly-1).next().unwrap();
-        let line_len = line_text.chars().count();
-        println!("{}", line_text);
-        if sy == py {
-            let mut pre = String::new();
-            for _ in 0.. sx-1 {
-                pre.push(' ');
-            }
-            for _ in sx-1 .. px-1 {
-                pre.push('~');
-            }
-            println!("{}^", pre);
-        } else if ly == sy {
-            let mut pre = String::new();
-            for _ in 0..sx-1 {
-                pre.push(' ');
-            }
-            for _ in sx-1..line_len {
-                pre.push('~');
-            }
-            println!("{}", pre);
-        } else if ly == py {
-            let mut pre = String::new();
-            for _ in 0..px-1 {
-                pre.push('~');
-            }
-            println!("{}^", pre);
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum LexerError {
@@ -568,44 +520,44 @@ impl LexerError {
         use self::LexerError::*;
         match *self {
             UnclosedString { start } => {
-                let (line, col) = get_position(text, start);
+                let (line, col) = debug::get_position(text, start);
                 println!("Unclosed string starting at {}:{} :", line, col);
-                show_unclosed(text, start);
+                debug::show_unclosed(text, start);
             }
             UnclosedLiteral { start } => {
-                let (line, col) = get_position(text, start);
+                let (line, col) = debug::get_position(text, start);
                 println!("Unclosed string starting at {}:{} :", line, col);
-                show_unclosed(text, start);
+                debug::show_unclosed(text, start);
             }
             InvalidEscapeCharacter { pos, .. } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Invalid escape character at {}:{} :", line, col);
-                show_invalid_character(text, pos);
+                debug::show_invalid_character(text, pos);
             }
             InvalidValueCharacter { start, pos } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Invalid character in value at {}:{} :", line, col);
-                show_invalid_part(text, start, pos);
+                debug::show_invalid_part(text, start, pos);
             }
             InvalidIntCharacter { start, pos } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Invalid character in integer at {}:{} :", line, col);
-                show_invalid_part(text, start, pos);
+                debug::show_invalid_part(text, start, pos);
             }
             InvalidFloatCharacter { start, pos } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Invalid character in float at {}:{} :", line, col);
-                show_invalid_part(text, start, pos);
+                debug::show_invalid_part(text, start, pos);
             }
             UnmatchedClosingBrace { pos } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Unmatched brace found at {}:{} :", line, col);
-                show_invalid_character(text, pos);
+                debug::show_invalid_character(text, pos);
             }
             InvalidKeyCharacter { pos } => {
-                let (line, col) = get_position(text, pos);
+                let (line, col) = debug::get_position(text, pos);
                 println!("Invalid key character at {}:{} :", line, col);
-                show_invalid_character(text, pos);
+                debug::show_invalid_character(text, pos);
             }
             _ => println!("Error: {:?}", *self),
         }
@@ -617,7 +569,8 @@ impl<'a> Iterator for Lexer<'a> {
     
     fn next(&mut self) -> Option<Self::Item> {
         use self::LexerError::*;
-        use self::Token::*;
+        use self::TokenData::*;
+        let start = self.start;
         
         if self.finished {
             return None;
@@ -641,7 +594,7 @@ impl<'a> Iterator for Lexer<'a> {
                     self.start += 1;
                     self.scope_stack.push('{');
                     self.scope = LexerScope::Key;
-                    return Some(Ok(CurlyOpen));
+                    return Some(Ok(Token::new(start, CurlyOpen)));
                 }
                 '}' => {
                     if self.scope_stack.is_empty() {
@@ -653,7 +606,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.scope_stack.pop();
                     }
                     self.start += 1;
-                    return Some(Ok(CurlyClose));
+                    return Some(Ok(Token::new(start, CurlyClose)));
                 }
                 '\r' => {
                     self.start += 1;
@@ -665,7 +618,7 @@ impl<'a> Iterator for Lexer<'a> {
                         if self.scope_stack.is_empty() {
                             self.scope = LexerScope::Key; 
                         }
-                        return Some(Ok(Newline(part)));
+                        return Some(Ok(Token::new(start, Newline(part))));
                     } else {
                         self.finished = true;
                         return Some(Err(InvalidWhitespace { pos: i }));
@@ -677,12 +630,12 @@ impl<'a> Iterator for Lexer<'a> {
                     if self.scope_stack.is_empty() {
                         self.scope = LexerScope::Key; 
                     }
-                    return Some(Ok(Newline("\n")));
+                    return Some(Ok(Token::new(start, Newline("\n"))));
                 }
                 '=' => {
                     self.start += 1;
                     self.scope = LexerScope::Value;
-                    return Some(Ok(Equals));
+                    return Some(Ok(Token::new(start, Equals)));
                 }
                 '"' => {
                     return Some(self.read_string(false));
@@ -695,11 +648,11 @@ impl<'a> Iterator for Lexer<'a> {
                         self.scope = LexerScope::Key;
                     }
                     self.start += 1;
-                    return Some(Ok(Comma));
+                    return Some(Ok(Token::new(start, Comma)));
                 }
                 '.' => {
                     self.start += 1;
-                    return Some(Ok(Dot));
+                    return Some(Ok(Token::new(start, Dot)));
                 }
                 ch => {
                     match self.scope {

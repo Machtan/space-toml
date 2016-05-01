@@ -3,11 +3,13 @@ use std::iter::Iterator;
 use std::borrow::Cow;
 
 use lexer::{Lexer, LexerError, Token};
-use structure::{TomlTable, TomlKey};
+use structure::{TomlTable, TomlKey, clean_string};
+use debug;
 
+#[derive(Debug)]
 pub enum ParseError {
     LexerError(LexerError),
-    EmptyScope,
+    InvalidScope { start: usize, pos: usize },
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -16,8 +18,10 @@ impl ParseError {
             LexerError(ref err) => {
                 err.show(text);
             }
-            EmptyScope => {
-                println!("Empty scope found :c");
+            InvalidScope { start, pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Invalid scope found at {}:{} :", line, col);
+                debug::show_invalid_part(text, start, pos);
             }
         }
     }
@@ -45,37 +49,48 @@ impl<'a> Parser<'a> {
     }
     
     pub fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
-        use lexer::Token::*;
+        use lexer::TokenData::*;
         let mut top_table = TomlTable::new(false);
         let mut cur_table = top_table;
         while let Some(res) = self.lexer.next() {
             match res {
-                Ok(Whitespace(text)) | Ok(Newline(text)) => {
-                    cur_table.push_space(text);
-                }
-                Ok(SingleBracketOpen) => {
-                    let scope = self.read_scope(false)?;
-                }
-                Ok(DoubleBracketOpen) => {
-                    let scope = self.read_scope(true)?;
-                }
-                Ok(Comment(text)) => {
-                    cur_table.push_comment(text);
-                }
-                Ok(Key(text)) => {
-                    
-                }
-                Ok(String { text, literal, multiline }) => {
-        
+                Ok(res) => {
+                    match res.data {
+                        Whitespace(text) | Newline(text) => {
+                            cur_table.push_space(text);
+                        }
+                        SingleBracketOpen => {
+                            let scope = self.read_scope(false)?;
+                        }
+                        DoubleBracketOpen => {
+                            let scope = self.read_scope(true)?;
+                        }
+                        Comment(text) => {
+                            cur_table.push_comment(text);
+                        }
+                        Key(text) => {
+                            let key = TomlKey::Plain(text);
+                            println!("Key:");
+                            key.show();
+                        }
+                        String { text, literal, multiline } => {
+                            let key = TomlKey::String {
+                                text: text, literal: literal, multiline: multiline
+                            };
+                            println!("Key:");
+                            key.show();
+                        }
+                        other => {
+                            panic!("Unexpected element: {:?}", other);
+                        }
+                    }
                 }
                 Err(err) => {
                     println!("Parse error!");
                     err.show(self.text);
                 }
-                Ok(other) => {
-                    panic!("Unexpected element: {:?}", other);
-                }
             }
+            
         }
         unimplemented!();
     }

@@ -9,11 +9,13 @@ extern crate chrono;
 use std::io::Read;
 use std::fs::File;
 
+mod debug;
 mod lexer;
 mod structure;
 mod parser;
 
 use lexer::Lexer;
+use parser::Parser;
 
 fn test_lexer(text: &str, verbose: bool) {
     let mut out = String::new();
@@ -72,6 +74,9 @@ fn main() {
     hard_file.read_to_string(&mut hard_example)
         .expect("Could not read the sample");
     test_lexer(&hard_example, false);
+    
+    let mut parser = Parser::new(simple);
+    let mut table = parser.parse().expect("Aww, an error :c");
     
     println!("Done!");
 }
