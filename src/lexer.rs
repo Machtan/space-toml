@@ -222,13 +222,17 @@ impl<'a> Lexer<'a> {
                 if multiline && self.next_is(i, "'''") {
                     self.chars.next();
                     self.chars.next();
-                    let part = &self.text[self.start .. i+3];
+                    let part = &self.text[self.start+3 .. i]; // Remove apostrophes
                     self.start = i + 3;
-                    return Ok(MultilineLiteral(part));
+                    return Ok(String { 
+                        text: part, literal: true, multiline: true
+                    });
                 } else if ch == '\'' && (! multiline) {
-                    let part = &self.text[self.start .. i+1];
+                    let part = &self.text[self.start+1 .. i];
                     self.start = i + 1;
-                    return Ok(Literal(part));
+                    return Ok(String { 
+                        text: part, literal: true, multiline: false
+                    });
                 }
             }
             Err(UnclosedLiteral { start: self.start })
@@ -238,13 +242,17 @@ impl<'a> Lexer<'a> {
                     if multiline && self.next_is(i, "\"\"\"") {
                         self.chars.next();
                         self.chars.next();
-                        let part = &self.text[self.start .. i+3];
+                        let part = &self.text[self.start+3 .. i];
                         self.start = i + 3;
-                        return Ok(MultilineString(part));
+                        return Ok(String { 
+                            text: part, literal: false, multiline: true
+                        });
                     } else if ch == '"' && (! multiline) {
-                        let part = &self.text[self.start .. i+1];
+                        let part = &self.text[self.start+1 .. i];
                         self.start = i + 1;
-                        return Ok(String(part));
+                        return Ok(String { 
+                            text: part, literal: false, multiline: false
+                        });
                     } else if ch == '\\' {
                         escaped = true;
                     }
@@ -435,33 +443,44 @@ pub enum Token<'a> {
     Dot,
     Newline(&'a str),
     Key(&'a str), // Unquoted key
-    String(&'a str),
-    MultilineString(&'a str),
-    Literal(&'a str),
-    MultilineLiteral(&'a str),
+    String { text: &'a str, literal: bool, multiline: bool },
     DateTime(&'a str),
     Int(&'a str),
     Float(&'a str),
     Bool(bool),
 }
 impl<'a> Token<'a> {
-    pub fn as_str(&self) -> &'a str {
+    pub fn write(&self, out: &mut String) {
         use self::Token::*;
         match *self {
             Whitespace(s) | Comment(s) | Newline(s) | Key(s)
-            | String(s) | MultilineString(s) | Literal(s) | MultilineLiteral(s)
-            | DateTime(s) | Int(s) | Float(s) => s,
-            SingleBracketOpen => "[",
-            DoubleBracketOpen => "[[",
-            SingleBracketClose => "]",
-            DoubleBracketClose => "]]",
-            CurlyOpen => "{",
-            CurlyClose => "}",
-            Equals => "=",
-            Comma => ",",
-            Dot => ".",
-            Bool(true) => "true",
-            Bool(false) => "false",
+            | DateTime(s) | Int(s) | Float(s) => out.push_str(s),
+            SingleBracketOpen => out.push_str("["),
+            DoubleBracketOpen => out.push_str("[["),
+            SingleBracketClose => out.push_str("]"),
+            DoubleBracketClose => out.push_str("]]"),
+            CurlyOpen => out.push_str("{"),
+            CurlyClose => out.push_str("}"),
+            Equals => out.push_str("="),
+            Comma => out.push_str(","),
+            Dot => out.push_str("."),
+            Bool(true) => out.push_str("true"),
+            Bool(false) => out.push_str("false"),
+            String { text, literal, multiline } => {
+                out.push_str(match (literal, multiline) {
+                    (true, true) => "'''",
+                    (true, false) => "'",
+                    (false, true) => r#"""""#,
+                    (false, false) => r#"""#,
+                });
+                out.push_str(text);
+                out.push_str(match (literal, multiline) {
+                    (true, true) => "'''",
+                    (true, false) => "'",
+                    (false, true) => r#"""""#,
+                    (false, false) => r#"""#,
+                });
+            }
         }
     }
 }

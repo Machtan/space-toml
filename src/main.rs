@@ -27,7 +27,7 @@ fn test_lexer(text: &str, verbose: bool) {
                 if verbose {
                     println!("{:?}", token);
                 }
-                out.push_str(token.as_str());
+                token.write(&mut out);
             }
             Err(err) => {
                 return err.show(text);

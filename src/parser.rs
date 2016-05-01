@@ -3,10 +3,11 @@ use std::iter::Iterator;
 use std::borrow::Cow;
 
 use lexer::{Lexer, LexerError, Token};
-use structure::TomlTable;
+use structure::{TomlTable, TomlKey};
 
 pub enum ParseError {
-    LexerError(LexerError)
+    LexerError(LexerError),
+    EmptyScope,
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -14,6 +15,9 @@ impl ParseError {
         match *self {
             LexerError(ref err) => {
                 err.show(text);
+            }
+            EmptyScope => {
+                println!("Empty scope found :c");
             }
         }
     }
@@ -36,7 +40,7 @@ impl<'a> Parser<'a> {
         }
     }
     
-    fn read_scope(&mut self) -> Result<, ParseError> {
+    fn read_scope(&mut self, array: bool) -> Result<Vec<TomlKey<'a>>, ParseError> {
         unimplemented!();
     }
     
@@ -49,17 +53,28 @@ impl<'a> Parser<'a> {
                 Ok(Whitespace(text)) | Ok(Newline(text)) => {
                     cur_table.push_space(text);
                 }
+                Ok(SingleBracketOpen) => {
+                    let scope = self.read_scope(false)?;
+                }
+                Ok(DoubleBracketOpen) => {
+                    let scope = self.read_scope(true)?;
+                }
                 Ok(Comment(text)) => {
                     cur_table.push_comment(text);
                 }
-                Ok(BracketOpen) => {
-                    self.read_scope()?;
+                Ok(Key(text)) => {
+                    
                 }
-                Err(e) => {
+                Ok(String { text, literal, multiline }) => {
+        
+                }
+                Err(err) => {
                     println!("Parse error!");
-                    e.show(self.text);
+                    err.show(self.text);
                 }
-                _ => unimplemented!()
+                Ok(other) => {
+                    panic!("Unexpected element: {:?}", other);
+                }
             }
         }
         unimplemented!();
