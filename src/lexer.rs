@@ -502,7 +502,7 @@ impl<'a> Token<'a> {
 
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LexerError {
     InvalidWhitespace { pos: usize },
     UnclosedLiteral { start: usize },

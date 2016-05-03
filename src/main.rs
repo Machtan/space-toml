@@ -48,7 +48,7 @@ fn main() {
 
     let simple = r#"
     [ hello  ] # lol
-    a = 2#3
+    a =    2#3
     b = "hello world"
     
     [ bob. "something" ]
@@ -76,7 +76,15 @@ fn main() {
     test_lexer(&hard_example, false);
     
     let mut parser = Parser::new(simple);
-    let mut table = parser.parse().expect("Aww, an error :c");
+    match parser.parse() {
+        Ok(table) => {
+            println!("Yay!");
+        }
+        Err(err) => {
+            println!("Parse error:");
+            err.show(simple);
+        }
+    }
     
     println!("Done!");
 }

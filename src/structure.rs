@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, UTC};
 use std::str::FromStr;
 use std::borrow::Cow;
+use std::char;
 
 /// Parses and cleans the given TOML string.
 pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a, str> {
@@ -35,11 +36,11 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     escaped = false;
                 }
                 'b' => {
-                    string.push(0x0008 as char);
+                    string.push(char::from_u32(0x0008u32).unwrap());
                     escaped = false;
                 }
                 'f' => {
-                    string.push(0x000C as char);
+                    string.push(char::from_u32(0x000Cu32).unwrap());
                     escaped = false;
                 }
                 '"' => {
@@ -83,15 +84,39 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
 
 #[derive(Debug)]
 enum ScopeItem<'a> {
+    Dot,
     Space(&'a str),
-    Comment(&'a str),
     Part(usize),
 }
 
 #[derive(Debug)]
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
-    scope: Vec<TomlKey<'a>>,
+    keys: Vec<TomlKey<'a>>,
+}
+
+impl<'a> Scope<'a> {
+    pub fn new() -> Scope<'a> {
+        Scope { ordering: Vec::new(), keys: Vec::new() }
+    }
+    
+    pub fn push_dot(&mut self) {
+        self.ordering.push(ScopeItem::Dot);
+    }
+    
+    pub fn push_space(&mut self, text: &'a str) {
+        self.ordering.push(ScopeItem::Space(text));
+    }
+    
+    pub fn push_key(&mut self, key: TomlKey<'a>) {
+        let new_index = self.keys.len();
+        self.keys.push(key);
+        self.ordering.push(ScopeItem::Part(new_index));
+    }
+    
+    pub fn path(&self) -> &[TomlKey<'a>] {
+        &self.keys
+    }
 }
 
 #[derive(Debug)]
@@ -189,6 +214,14 @@ pub enum TomlKey<'a> {
     String { text: &'a str, literal: bool, multiline: bool },
 }
 impl<'a> TomlKey<'a> {
+    pub fn from_key(key: &'a str) -> TomlKey<'a> {
+        TomlKey::Plain(key)
+    }
+    
+    pub fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a> {
+        TomlKey::String { text: text, literal: literal, multiline: multiline }
+    }
+    
     pub fn show(&self) {
         use self::TomlKey::*;
         match *self {
