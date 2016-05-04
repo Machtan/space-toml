@@ -67,8 +67,8 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_whitespace(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -78,16 +78,16 @@ impl<'a> Lexer<'a> {
                 ch => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Token::new(start, Whitespace(part)));
+                    return Ok((start, Whitespace(part)));
                 }
             }
         }
-        return Ok(Token::new(start, Whitespace(&self.text[self.start..])));
+        return Ok((start, Whitespace(&self.text[self.start..])));
     }
     
     #[inline]
-    fn read_key(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_key(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -97,41 +97,41 @@ impl<'a> Lexer<'a> {
                 ',' | ']' | ' ' | '\t' | '\n' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Token::new(start, Key(part)));
+                    return Ok((start, Key(part)));
                 }
                 ch => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Token::new(start, Key(part)));
+                    return Ok((start, Key(part)));
                 }
             }
         }
-        return Ok(Token::new(start, Key(&self.text[self.start..])));
+        return Ok((start, Key(&self.text[self.start..])));
     }
     
     #[inline]
-    fn read_comment(&mut self) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_comment(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             if self.next_is(i, "\r\n") {
                 let part = &self.text[self.start..i];
                 self.start = i;
-                return Ok(Token::new(start, Comment(part)));
+                return Ok((start, Comment(part)));
             } else if ch == '\n' {
                 let part = &self.text[self.start..i];
                 self.start = i;
-                return Ok(Token::new(start, Comment(part)));
+                return Ok((start, Comment(part)));
             } else {
                 self.chars.next();
             }
         }
-        return Ok(Token::new(start, Comment(&self.text[self.start..])));
+        return Ok((start, Comment(&self.text[self.start..])));
     }
     
     #[inline]
-    fn read_bracket(&mut self, open: bool) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         use self::LexerError::*;
         let start = self.start;
         self.start += 1;
@@ -142,16 +142,16 @@ impl<'a> Lexer<'a> {
                 self.chars.next(); // eat it
                 self.start += 1;
                 if open { 
-                    return Ok(Token::new(start, DoubleBracketOpen));
+                    return Ok((start, DoubleBracketOpen));
                 } else { 
-                    return Ok(Token::new(start, DoubleBracketClose));
+                    return Ok((start, DoubleBracketClose));
                 }
             } else {
                 if open {
                     //print!("Open: stack: {:?} -> ", self.scope_stack);
                     self.scope_stack.push('[');
                     //println!("{:?}", self.scope_stack);
-                    return Ok(Token::new(start, SingleBracketOpen));
+                    return Ok((start, SingleBracketOpen));
                 } else {
                     //print!("Close: stack: {:?} -> ", self.scope_stack);
                     if self.scope_stack.is_empty() {
@@ -162,13 +162,13 @@ impl<'a> Lexer<'a> {
                         self.scope_stack.pop();
                         //println!("{:?}", self.scope_stack);
                     }
-                    return Ok(Token::new(start, SingleBracketClose));
+                    return Ok((start, SingleBracketClose));
                 }
             }
         } else {
             if open {
                 self.scope_stack.push('[');
-                return Ok(Token::new(start, SingleBracketOpen));
+                return Ok((start, SingleBracketOpen));
             } else {
                 if self.scope_stack.is_empty() {
                     //println!("Error!");
@@ -178,14 +178,14 @@ impl<'a> Lexer<'a> {
                     self.scope_stack.pop();
                     //println!("{:?}", self.scope_stack);
                 }
-                return Ok(Token::new(start, SingleBracketClose));
+                return Ok((start, SingleBracketClose));
             }
         }
     }
     
     #[inline]
-    fn read_string(&mut self, literal: bool) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         use self::LexerError::*;
         let start = self.start;
         let mut escaped = false;
@@ -213,13 +213,13 @@ impl<'a> Lexer<'a> {
                     self.chars.next();
                     let part = &self.text[self.start+3 .. i]; // Remove apostrophes
                     self.start = i + 3;
-                    return Ok(Token::new(start, String { 
+                    return Ok((start, String { 
                         text: part, literal: true, multiline: true
                     }));
                 } else if ch == '\'' && (! multiline) {
                     let part = &self.text[self.start+1 .. i];
                     self.start = i + 1;
-                    return Ok(Token::new(start, String { 
+                    return Ok((start, String { 
                         text: part, literal: true, multiline: false
                     }));
                 }
@@ -233,13 +233,13 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                         let part = &self.text[self.start+3 .. i];
                         self.start = i + 3;
-                        return Ok(Token::new(start, String { 
+                        return Ok((start, String { 
                             text: part, literal: false, multiline: true
                         }));
                     } else if ch == '"' && (! multiline) {
                         let part = &self.text[self.start+1 .. i];
                         self.start = i + 1;
-                        return Ok(Token::new(start, String { 
+                        return Ok((start, String { 
                             text: part, literal: false, multiline: false
                         }));
                     } else if ch == '\\' {
@@ -277,8 +277,8 @@ impl<'a> Lexer<'a> {
     
     #[inline]
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
-            -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+            -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         use self::LexerError::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -315,7 +315,7 @@ impl<'a> Lexer<'a> {
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Token::new(start, Int(part)));
+                    return Ok((start, Int(part)));
                 }
                 ch => {
                     return Err(InvalidIntCharacter {
@@ -325,13 +325,13 @@ impl<'a> Lexer<'a> {
             }
         }
         let part = &self.text[self.start..];
-        Ok(Token::new(start, Int(part)))
+        Ok((start, Int(part)))
     }
     
     #[inline]
     fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
-            -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+            -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         use self::LexerError::*;
         let start = self.start;
         
@@ -364,7 +364,7 @@ impl<'a> Lexer<'a> {
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok(Token::new(start, Float(part)));
+                    return Ok((start, Float(part)));
                 }
                 ch => {
                     return Err(InvalidFloatCharacter {
@@ -374,12 +374,12 @@ impl<'a> Lexer<'a> {
             }
         }
         let part = &self.text[self.start..];
-        Ok(Token::new(start, Float(part)))
+        Ok((start, Float(part)))
     }
     
     #[inline]
-    fn read_value(&mut self, i: usize, ch: char) -> Result<Token<'a>, LexerError> {
-        use self::TokenData::*;
+    fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), LexerError> {
+        use self::Token::*;
         use self::LexerError::*;
         let start = self.start;
         
@@ -390,7 +390,7 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                     }
                     self.start = i + 4;
-                    return Ok(Token::new(start, Bool(true)));
+                    return Ok((start, Bool(true)));
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
@@ -403,7 +403,7 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                     }
                     self.start = i + 5;
-                    return Ok(Token::new(start, Bool(false)));
+                    return Ok((start, Bool(false)));
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
@@ -427,7 +427,7 @@ impl<'a> Lexer<'a> {
 }
 
 #[derive(Debug)]
-pub enum TokenData<'a> {
+pub enum Token<'a> {
     Whitespace(&'a str),
     SingleBracketOpen,
     DoubleBracketOpen,
@@ -448,26 +448,10 @@ pub enum TokenData<'a> {
     Bool(bool),
 }
 
-#[derive(Debug)]
-pub struct Token<'a> {
-    pub start: usize,
-    pub data: TokenData<'a>,
-}
-
-impl<'a> Token<'a> {
-    fn new(start: usize, data: TokenData<'a>) -> Token<'a> {
-        Token {
-            start: start, data: data
-        }
-    }
-    
-    pub fn len(&self) -> usize {
-        unimplemented!();
-    }
-    
+impl<'a> Token<'a> {    
     pub fn write(&self, out: &mut String) {
-        use self::TokenData::*;
-        match self.data {
+        use self::Token::*;
+        match *self {
             Whitespace(s) | Comment(s) | Newline(s) | Key(s)
             | DateTime(s) | Int(s) | Float(s) => out.push_str(s),
             SingleBracketOpen => out.push_str("["),
@@ -565,11 +549,11 @@ impl LexerError {
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Token<'a>, LexerError>;
+    type Item = Result<(usize, Token<'a>), LexerError>;
     
     fn next(&mut self) -> Option<Self::Item> {
         use self::LexerError::*;
-        use self::TokenData::*;
+        use self::Token::*;
         let start = self.start;
         
         if self.finished {
@@ -594,7 +578,7 @@ impl<'a> Iterator for Lexer<'a> {
                     self.start += 1;
                     self.scope_stack.push('{');
                     self.scope = LexerScope::Key;
-                    return Some(Ok(Token::new(start, CurlyOpen)));
+                    return Some(Ok((start, CurlyOpen)));
                 }
                 '}' => {
                     if self.scope_stack.is_empty() {
@@ -606,7 +590,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.scope_stack.pop();
                     }
                     self.start += 1;
-                    return Some(Ok(Token::new(start, CurlyClose)));
+                    return Some(Ok((start, CurlyClose)));
                 }
                 '\r' => {
                     self.start += 1;
@@ -618,7 +602,7 @@ impl<'a> Iterator for Lexer<'a> {
                         if self.scope_stack.is_empty() {
                             self.scope = LexerScope::Key; 
                         }
-                        return Some(Ok(Token::new(start, Newline(part))));
+                        return Some(Ok((start, Newline(part))));
                     } else {
                         self.finished = true;
                         return Some(Err(InvalidWhitespace { pos: i }));
@@ -630,12 +614,12 @@ impl<'a> Iterator for Lexer<'a> {
                     if self.scope_stack.is_empty() {
                         self.scope = LexerScope::Key; 
                     }
-                    return Some(Ok(Token::new(start, Newline("\n"))));
+                    return Some(Ok((start, Newline("\n"))));
                 }
                 '=' => {
                     self.start += 1;
                     self.scope = LexerScope::Value;
-                    return Some(Ok(Token::new(start, Equals)));
+                    return Some(Ok((start, Equals)));
                 }
                 '"' => {
                     return Some(self.read_string(false));
@@ -648,11 +632,11 @@ impl<'a> Iterator for Lexer<'a> {
                         self.scope = LexerScope::Key;
                     }
                     self.start += 1;
-                    return Some(Ok(Token::new(start, Comma)));
+                    return Some(Ok((start, Comma)));
                 }
                 '.' => {
                     self.start += 1;
-                    return Some(Ok(Token::new(start, Dot)));
+                    return Some(Ok((start, Dot)));
                 }
                 ch => {
                     match self.scope {

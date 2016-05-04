@@ -7,6 +7,35 @@ use std::str::FromStr;
 use std::borrow::Cow;
 use std::char;
 
+#[derive(Debug, Clone)]
+pub struct TomlString<'a> { 
+    text: &'a str, 
+    literal: bool,
+    multiline: bool
+}
+impl<'a> TomlString<'a> {
+    pub fn new(text: &'a str, literal: bool, multiline: bool) -> TomlString<'a> {
+        TomlString {
+            text: text,
+            literal: literal,
+            multiline: multiline,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum TomlFloat<'a> {
+    Text(&'a str),
+    Value(f64),
+}
+
+#[derive(Debug)]
+pub enum TomlInt<'a> {
+    Text(&'a str),
+    Value(i64),
+}
+
+
 /// Parses and cleans the given TOML string.
 pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a, str> {
     if literal {
@@ -124,91 +153,99 @@ enum ArrayItem<'a> {
     Space(&'a str),
     Comment(&'a str),
     Item(usize),
+    Comma,
 }
 
 #[derive(Debug)]
-pub struct TomlArray<'a, T: TomlDecodable> {
-    values: Vec<TomlItem<'a, T>>,
+pub struct TomlArray<'a> {
+    items: Vec<TomlValue<'a>>,
     order: Vec<ArrayItem<'a>>,
 }
 
-pub trait TomlDecodable: Debug {
-    fn from(toml: &str) -> Self;
-}
-
-impl TomlDecodable for f64 {
-    fn from(toml: &str) -> Self {
-        f64::from_str(toml).expect("Invalid float value found (lexer error?)")
-    }
-}
-
-impl TomlDecodable for i64 {
-    fn from(toml: &str) -> Self {
-        i64::from_str(toml).expect("Invalid float value found (lexer error?)")
-    }
-}
-
-impl TomlDecodable for bool {
-    fn from(toml: &str) -> Self {
-        match toml {
-            "true" => true,
-            "false" => false,
-            _ => panic!("Invalid bool value found (lexer error?)"),
+impl<'a> TomlArray<'a> {
+    pub fn new() -> TomlArray<'a> {
+        TomlArray {
+            items: Vec::new(),
+            order: Vec::new(),
         }
     }
-}
-
-impl TomlDecodable for String {
-    fn from(toml: &str) -> Self {
-        if toml.starts_with("'''") {
-            return (&toml[3..toml.len()-3]).to_string();
-        } else if toml.starts_with("'") {
-            return (&toml[1..toml.len()-1]).to_string();
-        } else if toml.starts_with(r#"""""#) {
-            // TODO: Implement escaping
-            return (&toml[3..toml.len()-3]).to_string();
-        } else if toml.starts_with(r#"""#) {
-            // TODO: Implement escaping
-            return (&toml[1..toml.len()-1]).to_string();
-        } else {
-            panic!("Invalid toml string decoded (lexer error!)");
+    
+    pub fn push(&mut self, value: TomlValue<'a>) -> Result<(), String> {
+        if let Some(first) = self.items.get(0) {
+            if ! first.is_same_type(&value) {
+                return Err(format!("Attempted to insert a value of type {:?} into an array of type {:?}", value, first));
+            }
         }
+        self.order.push(ArrayItem::Item(self.items.len()));
+        self.items.push(value);
+        Ok(())
     }
-}
-
-#[derive(Debug)]
-pub enum TomlItem<'a, T: TomlDecodable> {
-    Token(&'a str),
-    Value(T),
-    Cached(&'a str, T),
+    
+    pub fn push_space(&mut self, space: &'a str) {
+        self.order.push(ArrayItem::Space(space));
+    }
+    
+    pub fn push_comma(&mut self) {
+        self.order.push(ArrayItem::Comma);
+    }
+    
+    /// This also pushes a newline.
+    pub fn push_comment(&mut self, comment: &'a str) {
+        self.order.push(ArrayItem::Comment(comment));
+        self.order.push(ArrayItem::Space("\n"));
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
 }
 
 #[derive(Debug)]
 pub enum TomlValue<'a> {
-    String(TomlItem<'a, String>),
-    Bool(TomlItem<'a, bool>),
-    Int(TomlItem<'a, i64>),
-    Float(TomlItem<'a, f64>),
+    String(TomlString<'a>),
+    Bool(bool),
+    Int(TomlInt<'a>),
+    Float(TomlFloat<'a>),
     //DateTime(DateTime<UTC>),
     Table(TomlTable<'a>),
-    StringArray(TomlArray<'a, String>),
-    BoolArray(TomlArray<'a, bool>),
-    IntArray(TomlArray<'a, i64>),
-    FloatArray(TomlArray<'a, f64>),
+    Array(TomlArray<'a>)
     //DateTimeArray(TomlArray<DateTime<UTC>>),
     //TableArray(Vec<TomlTable>),
 }
 
-#[derive(Debug)]
-enum TableItem<'a> {
-    Space(&'a str),
-    Comment(&'a str),
-    Entry(ValueEntry<'a>),
-    SubTable(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
-    SubTableArray(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
+impl<'a> TomlValue<'a> {
+    /// Creates a new integer
+    pub fn int(text: &'a str) -> TomlValue<'a> {
+        TomlValue::Int(TomlInt::Text(text))
+    }
+    
+    pub fn bool(value: bool) -> TomlValue<'a> {
+        TomlValue::Bool(value)
+    }
+    
+    pub fn string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a> {
+        TomlValue::String(TomlString::new(text, literal, multiline))
+    }
+    
+    pub fn float(text: &'a str) -> TomlValue<'a> {
+        TomlValue::Float(TomlFloat::Text(text))
+    }
+    
+    pub fn is_same_type(&self, other: &TomlValue) -> bool {
+        use self::TomlValue::*;
+        match (self, other) {
+            (&String(_), &String(_)) => true,
+            (&Bool(_), &Bool(_)) => true,
+            (&Int(_), &Int(_)) => true,
+            (&Float(_), &Float(_)) => true,
+            (&Table(_), &Table(_)) => true,
+            (&Array(_), &Array(_)) => true,
+            _ => false
+        }
+    }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum TomlKey<'a> {
     Plain(&'a str),
     String { text: &'a str, literal: bool, multiline: bool },
@@ -240,35 +277,62 @@ impl<'a> TomlKey<'a> {
 }
 
 #[derive(Debug)]
-struct ValueEntry<'a> {
-    key: TomlItem<'a, String>,
-    before_eq: &'a str,
-    after_eq: &'a str,
-    after_value: &'a str,
-    comment: Option<&'a str>
+enum TableItem<'a> {
+    Space(&'a str),
+    Comment(&'a str),
+    Entry(ValueEntry<'a>),
+    /// For inline tables
+    Comma, 
+    SubTable(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
+    SubTableArray(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
 }
+
+#[derive(Debug)]
+struct ValueEntry<'a> {
+    key: TomlKey<'a>,
+    before_eq: &'a str,
+    after_eq: &'a str,}
 
 #[derive(Debug)]
 pub struct TomlTable<'a> {
     inline: bool,
-    ordering: Vec<TableItem<'a>>,
-    map: HashMap<TomlKey<'a>, TomlValue<'a>>,
+    order: Vec<TableItem<'a>>,
+    items: HashMap<TomlKey<'a>, TomlValue<'a>>,
 }
 impl<'a> TomlTable<'a> {
     pub fn new(inline: bool) -> TomlTable<'a> {
         TomlTable {
             inline: inline,
-            ordering: Vec::new(),
-            map: HashMap::new(),
+            order: Vec::new(),
+            items: HashMap::new(),
         }
     }
     
     pub fn push_space(&mut self, space: &'a str) {
-        self.ordering.push(TableItem::Space(space));
+        self.order.push(TableItem::Space(space));
     }
     
     pub fn push_comment(&mut self, comment: &'a str) {
-        self.ordering.push(TableItem::Comment(comment));
+        self.order.push(TableItem::Comment(comment));
+    }
+    
+    pub fn insert_spaced(&mut self, key: TomlKey<'a>, value: TomlValue<'a>, 
+            before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
+        let entry = ValueEntry { 
+            key: key.clone(), before_eq: before_eq.unwrap_or(""), 
+            after_eq: after_eq.unwrap_or("")
+        };
+        self.order.push(TableItem::Entry(entry));
+        self.items.insert(key, value);
+    }
+    
+    pub fn insert(&mut self, key: TomlKey<'a>, value: TomlValue<'a>) {
+        unimplemented!();
+        if self.items.contains_key(&key) {
+            
+        } else {
+            
+        }
     }
 }
 
