@@ -12,8 +12,12 @@ enum LexerScope {
     Value,
 }
 
+pub fn tokens<'a>(text: &'a str) -> Tokens<'a> {
+    Tokens::new(text)
+}
+
 #[derive(Debug)]
-pub struct Lexer<'a> {
+pub struct Tokens<'a> {
     text: &'a str,
     chars: CharStream<'a>,
     start: usize,
@@ -22,9 +26,9 @@ pub struct Lexer<'a> {
     scope_stack: Vec<char>,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(text: &'a str) -> Lexer<'a> {
-        Lexer {
+impl<'a> Tokens<'a> {
+    fn new(text: &'a str) -> Tokens<'a> {
+        Tokens {
             text: text,
             chars: text.char_indices().peekable(),
             start: 0,
@@ -34,7 +38,7 @@ impl<'a> Lexer<'a> {
         }
     }
     
-    pub fn current_position(&self) -> (usize, usize) {
+    fn current_position(&self) -> (usize, usize) {
         debug::get_position(self.text, self.start)
     }
     
@@ -67,7 +71,7 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -86,7 +90,7 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_key(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_key(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -110,7 +114,7 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_comment(&mut self) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_comment(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -130,9 +134,9 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::LexerError::*;
+        use self::TokenError::*;
         let start = self.start;
         self.start += 1;
         // Only check for array of tables when in key scope
@@ -184,9 +188,9 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::LexerError::*;
+        use self::TokenError::*;
         let start = self.start;
         let mut escaped = false;
         let multiline = if ! literal {
@@ -277,9 +281,9 @@ impl<'a> Lexer<'a> {
     
     #[inline]
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
-            -> Result<(usize, Token<'a>), LexerError> {
+            -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::LexerError::*;
+        use self::TokenError::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -330,9 +334,9 @@ impl<'a> Lexer<'a> {
     
     #[inline]
     fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
-            -> Result<(usize, Token<'a>), LexerError> {
+            -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::LexerError::*;
+        use self::TokenError::*;
         let start = self.start;
         
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -378,9 +382,9 @@ impl<'a> Lexer<'a> {
     }
     
     #[inline]
-    fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), LexerError> {
+    fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::LexerError::*;
+        use self::TokenError::*;
         let start = self.start;
         
         match ch {
@@ -426,7 +430,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Token<'a> {
     Whitespace(&'a str),
     SingleBracketOpen,
@@ -487,7 +491,7 @@ impl<'a> Token<'a> {
 
 
 #[derive(Debug, Clone)]
-pub enum LexerError {
+pub enum TokenError {
     InvalidWhitespace { pos: usize },
     UnclosedLiteral { start: usize },
     UnclosedString { start: usize },
@@ -499,9 +503,9 @@ pub enum LexerError {
     InvalidFloatCharacter { start: usize, pos: usize },
     UnderscoreNotAfterNumber { start: usize, pos: usize },
 }
-impl LexerError {
+impl TokenError {
     pub fn show(&self, text: &str) {
-        use self::LexerError::*;
+        use self::TokenError::*;
         match *self {
             UnclosedString { start } => {
                 let (line, col) = debug::get_position(text, start);
@@ -548,11 +552,11 @@ impl LexerError {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<(usize, Token<'a>), LexerError>;
+impl<'a> Iterator for Tokens<'a> {
+    type Item = Result<(usize, Token<'a>), TokenError>;
     
     fn next(&mut self) -> Option<Self::Item> {
-        use self::LexerError::*;
+        use self::TokenError::*;
         use self::Token::*;
         let start = self.start;
         

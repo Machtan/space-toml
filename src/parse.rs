@@ -2,13 +2,18 @@
 use std::iter::{Iterator, Peekable};
 use std::borrow::Cow;
 
-use lexer::{Lexer, LexerError, Token};
+use tokens::{self, TokenError, Token, Tokens};
 use structure::{TomlTable, TomlArray, TomlKey, TomlValue, clean_string, Scope};
 use debug;
 
+pub fn parse<'a>(text: &'a str) -> Result<TomlTable<'a>, ParseError> {
+    let mut parser = Parser::new(text);
+    parser.parse()
+}
+
 #[derive(Debug)]
 pub enum ParseError {
-    LexerError(LexerError),
+    TokenError(TokenError),
     InvalidScope { start: usize, pos: usize },
     UnfinishedScope { start: usize },
     UnfinishedItem { start: usize },
@@ -16,13 +21,15 @@ pub enum ParseError {
     InvalidValue { start: usize, pos: usize },
     MissingEquals { start: usize, pos: usize },
     DoubleCommaInArray { start: usize, pos: usize },
+    MissingComma { start: usize, pos: usize },
+    InvalidTableItem { pos: usize },
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
         use self::ParseError::*;
         match *self {
-            LexerError(ref err) => {
-                print!("Lexer: ");
+            TokenError(ref err) => {
+                print!("Tokens: ");
                 err.show(text);
             }
             InvalidScope { start, pos } => {
@@ -60,45 +67,48 @@ impl ParseError {
                 println!("Invalid comma in array at {}:{} :", line, col);
                 debug::show_invalid_part(text, start, pos);
             }
+            MissingComma { start, pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Expected comma in array at {}:{} :", line, col);
+                debug::show_invalid_part(text, start, pos);
+            }
+            InvalidTableItem { pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Invalid top_level item found at {}:{} :", line, col);
+                debug::show_invalid_character(text, pos);
+            }
+            
         }
     }
 }
-impl From<LexerError> for ParseError {
-    fn from(err: LexerError) -> ParseError {
-        ParseError::LexerError(err)
+impl From<TokenError> for ParseError {
+    fn from(err: TokenError) -> ParseError {
+        ParseError::TokenError(err)
     }
 }
 
-enum NextArrayState {
-    Closed,
-    Whitespace,
-    Comment,
-    Newline,
-    Value,
-}
-
-pub struct Parser<'a> {
+struct Parser<'a> {
     text: &'a str,
-    lexer: Peekable<Lexer<'a>>,
+    tokens: Peekable<Tokens<'a>>,
 }
 impl<'a> Parser<'a> {
-    pub fn new(text: &'a str) -> Parser<'a> {
+    fn new(text: &'a str) -> Parser<'a> {
         Parser {
             text: text,
-            lexer: Lexer::new(text).peekable(),
+            tokens: tokens::tokens(text).peekable(),
         }
     }
     
     fn read_scope(&mut self, array: bool, start: usize)
             -> Result<Scope<'a>, ParseError> {
-        use lexer::Token::*;
+        use tokens::Token::*;
         use self::ParseError::*;
         println!("scope, Array: {}", array);
         let mut was_key = false;
         let mut scope = Scope::new();
         let mut key_found = false;
         let mut closed = false;
-        while let Some(res) = self.lexer.next() {
+        while let Some(res) = self.tokens.next() {
             let (pos, token) = res?;
             match token {
                 Dot => {
@@ -153,43 +163,64 @@ impl<'a> Parser<'a> {
     
     fn read_array(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
         use self::ParseError::*;
-        use lexer::Token::*;
+        use tokens::Token::*;
         let mut array = TomlArray::new();
-        let mut next_state = NextArrayState::Value;
         let mut is_reading_value = true;
         let mut was_comma = false;
         loop {
             if is_reading_value {
-                next_state = NextArrayState::Value;
-                
                 match self.peek_or(UnfinishedItem { start: start })? {
-                    &(_, SingleBracketClose) => next_state = NextArrayState::Closed,
-                    &(pos, Comma) => {
+                    (_, SingleBracketClose) => {
+                        self.tokens.next();
+                        break;
+                    }
+                    (pos, Comma) => {
                         if ! was_comma {
+                            self.tokens.next();
                             array.push_comma();
                             was_comma = true;
                         } else {
                             return Err(DoubleCommaInArray { start: start, pos: pos });
                         }
                     }
-                    _ => unimplemented!(),
-                }
-                
-                
-                match next_state {
-                    NextArrayState::Closed => {
-                        self.lexer.next();
-                        break;
+                    (_, Whitespace(text)) | (_, Newline(text)) => {
+                        self.tokens.next();
+                        array.push_space(text);
                     }
-                    NextArrayState::Whitespace => {
-                        if let (_, Whitespace(text)) = self.lexer.next().unwrap()? {
-                            array.push_space(text);
-                        }
+                    (_, Comment(text)) => {
+                        self.tokens.next();
+                        array.push_comment(text);
                     }
-                    _ => unimplemented!(),
+                    _ => {
+                        let value = self.read_value(start)?;
+                        array.push(value);
+                        was_comma = false;
+                        is_reading_value = false;
+                    }
                 }
             } else {
-                
+                match self.peek_or(UnfinishedItem { start: start })? {
+                    (_, Comma) => {
+                        self.tokens.next();
+                        was_comma = true;
+                        is_reading_value = true;
+                    }
+                    (_, SingleBracketClose) => {
+                        self.tokens.next();
+                        break;
+                    }
+                    (_, Whitespace(text)) | (_, Newline(text)) => {
+                        self.tokens.next();
+                        array.push_space(text);
+                    }
+                    (_, Comment(text)) => {
+                        self.tokens.next();
+                        array.push_comment(text);
+                    }
+                    (pos, _) => {
+                        return Err(MissingComma { start: start, pos: pos });
+                    }
+                }
             }
         }
         
@@ -203,7 +234,7 @@ impl<'a> Parser<'a> {
     fn read_value(&mut self, start: usize)
             -> Result<TomlValue<'a>, ParseError> {
         use self::ParseError::*;
-        use lexer::Token::*;
+        use tokens::Token::*;
         println!("Reading value...");
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
@@ -224,7 +255,7 @@ impl<'a> Parser<'a> {
     fn read_item(&mut self, start: usize, key: TomlKey<'a>)
             -> Result<(TomlKey<'a>, Option<&'a str>, Option<&'a str>, TomlValue<'a>), ParseError> {
         use self::ParseError::*;
-        use lexer::Token::*;
+        use tokens::Token::*;
         let mut before_eq = None;
         let mut next = self.next_or(UnfinishedItem { start: start })?;
         if let Whitespace(text) = next.1 {
@@ -239,11 +270,11 @@ impl<'a> Parser<'a> {
         
         let mut after_eq = None;
         let mut has_whitespace_after = false;
-        if let &(_, Whitespace(_)) = self.peek_or(UnfinishedItem { start: start })? {
+        if let (_, Whitespace(_)) = self.peek_or(UnfinishedItem { start: start })? {
             has_whitespace_after = true;
         }
         if has_whitespace_after {
-            next = self.lexer.next().unwrap()?;
+            next = self.tokens.next().unwrap()?;
             if let Whitespace(text) = next.1 {
                 after_eq = Some(text);
             }
@@ -256,7 +287,7 @@ impl<'a> Parser<'a> {
     }
     
     fn next_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
-        match self.lexer.next() {
+        match self.tokens.next() {
             Some(val) => {
                 Ok(val?)
             },
@@ -264,41 +295,47 @@ impl<'a> Parser<'a> {
         }
     }
     
-    fn peek_or(&mut self, err: ParseError) -> Result<&(usize, Token<'a>), ParseError> {
-        match self.lexer.peek() {
+    fn peek_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
+        match self.tokens.peek() {
             Some(res) => {
                 match res {
                     &Err(ref e) => {
                         Err(ParseError::from(e.clone()))
                     },
-                    &Ok(ref token) => Ok(token),
+                    &Ok(token) => Ok(token),
                 }
             }
             None => Err(err)
         }
     }
     
+    pub fn read_table(&mut self) -> Result<TomlTable<'a>, ParseError> {
+        
+        unimplemented!();
+    }
+    
     pub fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
-        use lexer::Token::*;
+        use tokens::Token::*;
         use self::ParseError::*;
         let mut top_table = TomlTable::new(false);
-        let mut cur_table = top_table;
-        while let Some(res) = self.lexer.next() {
+        while let Some(res) = self.tokens.next() {
             let res = res?;
             match res {
                 (_, Whitespace(text)) | (_, Newline(text)) => {
-                    cur_table.push_space(text);
+                    top_table.push_space(text);
                 }
                 (pos, SingleBracketOpen) => {
                     let scope = self.read_scope(false, pos)?;
                     println!("Scope: {:?}", scope);
+                    let table = self.read_table()?;
                 }
                 (pos, DoubleBracketOpen) => {
                     let scope = self.read_scope(true, pos)?;
                     println!("Scope: {:?}", scope);
+                    let table = self.read_table()?;
                 }
                 (_, Comment(text)) => {
-                    cur_table.push_comment(text);
+                    top_table.push_comment(text);
                 }
                 (pos, Key(_)) | (pos, String { .. }) => {
                     let key = if let Key(text) = res.1 {
@@ -311,10 +348,11 @@ impl<'a> Parser<'a> {
                         unreachable!();
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
-                    
+                    println!("{:?} = {:?}", key, value);
+                    top_table.insert_spaced(key, value, before_eq, after_eq);
                 }
-                other => {
-                    panic!("Unexpected element: {:?}", other);
+                (pos, _) => {
+                    return Err(InvalidTableItem { pos: pos });
                 }
             }
         }

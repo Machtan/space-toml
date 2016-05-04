@@ -10,33 +10,25 @@ use std::io::Read;
 use std::fs::File;
 
 mod debug;
-mod lexer;
+mod tokens;
 mod structure;
-mod parser;
-
-use lexer::Lexer;
-use parser::Parser;
+mod parse;
 
 fn test_lexer(text: &str, verbose: bool) {
     let mut out = String::new();
-    let mut lexer = Lexer::new(text);
-    if verbose {
-        print!("{:03}:{:03} : ", lexer.current_position().0, lexer.current_position().1);
-    }
-    while let Some(res) = lexer.next() {
+    let mut tokens = tokens::tokens(text);
+    
+    while let Some(res) = tokens.next() {
         match res {
-            Ok(token) => {
+            Ok((pos, token)) => {
                 if verbose {
-                    println!("{:?}", token);
+                    println!("{:?}: {:?}", pos, token);
                 }
                 token.write(&mut out);
             }
             Err(err) => {
                 return err.show(text);
             }
-        }
-        if verbose {
-            print!("{:03}:{:03} : ", lexer.current_position().0, lexer.current_position().1);
         }
     }
     assert_eq!(text, &out);
@@ -57,7 +49,7 @@ fn main() {
     arr = [ 1, 2   ,    3 
     ,]
     
-    inline = { alice = "some", key = 2 }
+    #inline = { alice = "some", key = 2 }
     "#;
     test_lexer(simple, false);
     
@@ -75,8 +67,7 @@ fn main() {
         .expect("Could not read the sample");
     test_lexer(&hard_example, false);
     
-    let mut parser = Parser::new(simple);
-    match parser.parse() {
+    match parse::parse(simple) {
         Ok(table) => {
             println!("Yay!");
         }
