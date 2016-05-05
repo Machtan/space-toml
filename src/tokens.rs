@@ -119,18 +119,18 @@ impl<'a> Tokens<'a> {
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             if self.next_is(i, "\r\n") {
-                let part = &self.text[self.start..i];
+                let part = &self.text[self.start+1..i];
                 self.start = i;
                 return Ok((start, Comment(part)));
             } else if ch == '\n' {
-                let part = &self.text[self.start..i];
+                let part = &self.text[self.start+1..i];
                 self.start = i;
                 return Ok((start, Comment(part)));
             } else {
                 self.chars.next();
             }
         }
-        return Ok((start, Comment(&self.text[self.start..])));
+        return Ok((start, Comment(&self.text[self.start+1..])));
     }
     
     #[inline]
@@ -456,8 +456,12 @@ impl<'a> Token<'a> {
     pub fn write(&self, out: &mut String) {
         use self::Token::*;
         match *self {
-            Whitespace(s) | Comment(s) | Newline(s) | Key(s)
+            Whitespace(s) | Newline(s) | Key(s)
             | DateTime(s) | Int(s) | Float(s) => out.push_str(s),
+            Comment(s) => {
+                out.push('#');
+                out.push_str(s);
+            }
             SingleBracketOpen => out.push_str("["),
             DoubleBracketOpen => out.push_str("[["),
             SingleBracketClose => out.push_str("]"),

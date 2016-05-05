@@ -211,6 +211,7 @@ impl<'a> Parser<'a> {
             } else {
                 match self.peek_or(UnfinishedItem { start: start })? {
                     (_, Comma) => {
+                        array.push_comma();
                         self.tokens.next();
                         was_comma = true;
                         is_reading_value = true;
@@ -376,9 +377,13 @@ impl<'a> Parser<'a> {
                     let scope = self.read_scope(false, pos)?;
                     // TODO: Validate that the scope hasn't been used before
                     println!("Scope: {:?}", scope);
-                    let mut table = top_table.get_or_create_table(scope.path())?;
-                    self.read_table(&mut table)?;
-                    println!("Table: {:?}", table);
+                    {
+                        let mut table = top_table.get_or_create_table(scope.path())?;
+                        self.read_table(&mut table)?;
+                        println!("Table: {:?}", table);
+                    }
+                    top_table.push_scope(scope);
+                    
                 }
                 (pos, DoubleBracketOpen) => {
                     let scope = self.read_scope(true, pos)?;

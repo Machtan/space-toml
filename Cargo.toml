@@ -4,6 +4,3 @@ name = "space-toml"
 version = "0.1.0"
 
 [dependencies]
-chrono = "0.2.21"
-phf = "0.7.14"
-phf_macros = "0.7.14"

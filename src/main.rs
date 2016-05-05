@@ -1,10 +1,5 @@
 #![allow(unused)]
 #![feature(question_mark)]
-#![feature(plugin)]
-#![plugin(phf_macros)]
-
-extern crate phf;
-extern crate chrono;
 
 use std::io::Read;
 use std::fs::File;
@@ -70,6 +65,12 @@ fn main() {
     match parse::parse(simple) {
         Ok(table) => {
             println!("Yay!");
+            println!("Written output:");
+            let mut out = String::new();
+            table.write(&mut out);
+            println!("{}", out);
+            assert_eq!(simple, &out);
+            println!("Parsed table written and validated!");
         }
         Err(err) => {
             println!("Parse error:");
@@ -77,5 +78,5 @@ fn main() {
         }
     }
     
-    println!("Done!");
+    println!("~~~ Done! ~~~");
 }

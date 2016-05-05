@@ -1,8 +1,5 @@
-extern crate chrono;
-
 use std::fmt::Debug;
 use std::collections::HashMap;
-use chrono::{DateTime, UTC};
 use std::str::FromStr;
 use std::borrow::Cow;
 use std::char;
@@ -146,6 +143,21 @@ impl<'a> Scope<'a> {
     pub fn path(&self) -> &[TomlKey<'a>] {
         &self.keys
     }
+    
+    pub fn write(&self, out: &mut String) {
+        use self::ScopeItem::*;
+        out.push('[');
+        for item in self.ordering.iter() {
+            match *item {
+                Dot => out.push('.'),
+                Space(text) => out.push_str(text),
+                Part(index) => {
+                    self.keys[index].write(out);
+                }
+            }
+        }
+        out.push(']');
+    }
 }
 
 #[derive(Debug)]
@@ -198,6 +210,25 @@ impl<'a> TomlArray<'a> {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+    
+    pub fn write(&self, out: &mut String) {
+        use self::ArrayItem::*;
+        out.push('[');
+        for item in self.order.iter() {
+            match *item {
+                Space(text) => out.push_str(text),
+                Comment(text) => {
+                    out.push('#');
+                    out.push_str(text);
+                }
+                Item(index) => {
+                    self.items[index].write(out);
+                }
+                Comma => out.push(','),
+            }
+        }
+        out.push(']');
+    }
 }
 
 #[derive(Debug)]
@@ -211,6 +242,22 @@ pub enum TomlValue<'a> {
     Array(TomlArray<'a>)
     //DateTimeArray(TomlArray<DateTime<UTC>>),
     //TableArray(Vec<TomlTable>),
+}
+
+fn write_string(text: &str, literal: bool, multiline: bool, out: &mut String) {
+    match (literal, multiline) {
+        (true, true) => out.push_str("'''"),
+        (true, false) => out.push_str("'"),
+        (false, true) => out.push_str(r#"""""#),
+        (false, false) => out.push_str(r#"""#),
+    }
+    out.push_str(text);
+    match (literal, multiline) {
+        (true, true) => out.push_str("'''"),
+        (true, false) => out.push_str("'"),
+        (false, true) => out.push_str(r#"""""#),
+        (false, false) => out.push_str(r#"""#),
+    }
 }
 
 impl<'a> TomlValue<'a> {
@@ -243,6 +290,22 @@ impl<'a> TomlValue<'a> {
             _ => false
         }
     }
+    
+    pub fn write(&self, out: &mut String) {
+        use self::TomlValue::*;
+        match *self {
+            String(ref string) => {
+                write_string(string.text, string.literal, string.multiline, out);
+            },
+            Bool(b) => out.push_str(if b {"true"} else {"false"}),
+            Int(TomlInt::Text(text)) => out.push_str(text),
+            Int(TomlInt::Value(v)) => out.push_str(&format!("{}", v)),
+            Float(TomlFloat::Text(text)) => out.push_str(text),
+            Float(TomlFloat::Value(v)) => out.push_str(&format!("{}", v)),
+            Table(ref table) => table.write(out),
+            Array(ref array) => array.write(out),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -259,18 +322,12 @@ impl<'a> TomlKey<'a> {
         TomlKey::String { text: text, literal: literal, multiline: multiline }
     }
     
-    pub fn show(&self) {
+    pub fn write(&self, out: &mut String) {
         use self::TomlKey::*;
         match *self {
-            Plain(text) => println!("{}", text),
+            Plain(text) => out.push_str(text),
             String { text, literal, multiline } => {
-                let clean = clean_string(text, literal, multiline);
-                match (literal, multiline) {
-                    (true, true) => println!("'''{}'''", clean),
-                    (true, false) => println!("'{}'", clean),
-                    (false, true) => println!(r#""""{}""""#, clean),
-                    (false, false) => println!(r#""{}""#, clean)
-                }
+                write_string(text, literal, multiline, out);
             }
         }
     }
@@ -283,15 +340,24 @@ enum TableItem<'a> {
     Entry(ValueEntry<'a>),
     /// For inline tables
     Comma, 
-    SubTable(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
-    SubTableArray(Scope<'a>, TomlKey<'a>), // Only used in the top-level table
+    Scope(Scope<'a>), // Only used in the top-level table
 }
 
 #[derive(Debug)]
 struct ValueEntry<'a> {
     key: TomlKey<'a>,
     before_eq: &'a str,
-    after_eq: &'a str,}
+    after_eq: &'a str,
+}
+
+impl<'a> ValueEntry<'a> {
+    pub fn write(&self, out: &mut String) {
+        self.key.write(out);
+        out.push_str(self.before_eq);
+        out.push('=');
+        out.push_str(self.after_eq);
+    }
+}
 
 #[derive(Debug)]
 pub enum CreatePathError {
@@ -319,6 +385,10 @@ impl<'a> TomlTable<'a> {
     
     pub fn push_comment(&mut self, comment: &'a str) {
         self.order.push(TableItem::Comment(comment));
+    }
+    
+    pub fn push_scope(&mut self, scope: Scope<'a>) {
+        self.order.push(TableItem::Scope(scope));
     }
     
     pub fn insert_spaced(&mut self, key: TomlKey<'a>, value: TomlValue<'a>, 
@@ -350,6 +420,29 @@ impl<'a> TomlTable<'a> {
         }
     }
     
+    pub fn get_path(&self, path: &[TomlKey<'a>])
+            -> Option<&TomlValue<'a>> {
+        if path.is_empty() {
+            None
+        } else if path.len() == 1 {
+            self.items.get(&path[0])
+        } else {
+            let ref first = path[0];
+            let rest = &path[1..];
+
+            match self.items.get(&first) {
+                Some(&TomlValue::Table(ref table)) => {
+                    table.get_path(rest)
+                }
+                Some(_) => {
+                    // TODO: Return an error here
+                    None
+                }
+                None => None,
+            }
+        }
+    }
+    
     pub fn get_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
         if path.is_empty() {
             self
@@ -371,14 +464,33 @@ impl<'a> TomlTable<'a> {
             
         }
     }
-}
-
-#[derive(Debug)]
-pub enum TomlError {
-    UnexpectedCharacter(usize),
-    UnclosedScope(usize),
-    UnexpectedLinebreak(usize),
-    EmptyScope(usize),
-    InvalidKeyChar { start: usize, invalid: char, index: usize },
-    MissingScopeSeparator { start: usize, missing: usize },
+    
+    pub fn write(&self, out: &mut String) {
+        use self::TableItem::*;
+        if self.inline {
+            out.push('{');
+        }
+        for item in self.order.iter() {
+            match *item {
+                Space(text) => out.push_str(text),
+                Comment(text) => {
+                    out.push('#');
+                    out.push_str(text);
+                }
+                Entry(ref entry) => {
+                    entry.write(out);
+                    self.items.get(&entry.key).unwrap().write(out);
+                }
+                Comma => out.push(','), 
+                Scope(ref scope) => {
+                    scope.write(out);
+                    // TODO: Un-hack ;)
+                    self.get_path(scope.path()).unwrap().write(out);
+                }
+            }
+        }
+        if self.inline {
+            out.push('}');
+        }
+    }
 }
