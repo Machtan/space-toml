@@ -113,7 +113,6 @@ impl<'a> Parser<'a> {
             -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
-        println!("scope, Array: {}", array);
         let mut was_key = false;
         let mut key_found = false;
         let mut closed = false;
@@ -245,7 +244,6 @@ impl<'a> Parser<'a> {
             -> Result<TomlValue<'a>, ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
-        println!("Reading value...");
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
             (_, Int(text)) => Ok(TomlValue::int(text)),
@@ -290,7 +288,6 @@ impl<'a> Parser<'a> {
             }
         }
         
-        println!("{:?} {:?} = {:?} ", key, before_eq, after_eq);
         let value_start = self.peek_or(UnfinishedItem { start: start })?.0;
         let value = self.read_value(value_start)?;
         Ok((key, before_eq, after_eq, value))
@@ -354,7 +351,6 @@ impl<'a> Parser<'a> {
                         unreachable!();
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
-                    println!("{:?} = {:?}", key, value);
                     // TODO: Check for duplicate keys
                     table.insert_spaced(key, value, before_eq, after_eq);
                 }
@@ -383,11 +379,9 @@ impl<'a> Parser<'a> {
                     self.read_scope(&mut scope, false, pos)?;
                     
                     // TODO: Validate that the scope hasn't been used before
-                    println!("Scope: {:?}", scope);
                     {
                         let mut table = top_table.get_or_create_table(scope.path())?;
                         self.read_table(&mut table)?;
-                        println!("Table: {:?}", table);
                     }
                     top_table.push_scope(scope);
                     
@@ -395,7 +389,6 @@ impl<'a> Parser<'a> {
                 (pos, DoubleBracketOpen) => {
                     let mut scope = Scope::new();
                     let scope = self.read_scope(&mut scope, true, pos)?;
-                    println!("Scope: {:?}", scope);
                     //let mut table = top_table.get_or_create_table(scope.path());
                     
                     //println!("Table: {:?}", table);
@@ -414,7 +407,6 @@ impl<'a> Parser<'a> {
                         unreachable!();
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
-                    println!("{:?} = {:?}", key, value);
                     top_table.insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, _) => {

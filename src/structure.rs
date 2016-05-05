@@ -581,19 +581,32 @@ impl<'a> TomlTable<'a> {
     
     fn last_indent(&mut self) -> &'a str {
         use self::TableItem::*;
+        let mut entry_found = false;
         let mut last_was_entry = false;
+        let mut after_newline = false;
+        let mut first_space = None;
         for item in self.order.iter().rev() {
             match *item {
-                Entry(_) => last_was_entry = true,
+                Entry(_) => {
+                    entry_found = true;
+                    last_was_entry = true;
+                }
                 Space(text) => {
+                    if after_newline && first_space.is_none() {
+                        first_space = Some(text);
+                    }
                     if last_was_entry {
                         return text
                     }
                 }
-                Comment(_) | Comma | Newline(_) => last_was_entry = false,
+                Comment(_) | Comma => last_was_entry = false,
+                Newline(_) => {
+                    last_was_entry = false;
+                    after_newline = true;
+                }
             }
         }
-        ""
+        first_space.unwrap_or("")
     }
     
     /// Pushes the given items before the last space in the table

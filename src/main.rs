@@ -34,6 +34,7 @@ fn main() {
     println!("T O M L !");
 
     let simple = r#"
+        
     [ hello  ] # lol
     a =    2#3
     b = "hello world"
@@ -78,6 +79,7 @@ fn main() {
                 .expect("Could not find bob.something")
                 .insert("Hello snorri", "Would you care,\n for a cuppa\"\" value?");
             table.insert("What_now_Smorri", "More strings, since other values aren't implemented yet");
+            table.insert("test", "This should be more indented, despite also being programatically inserted");
             let mut changed = String::new();
             table.write(&mut changed);
             println!("Changed:");
