@@ -109,13 +109,12 @@ impl<'a> Parser<'a> {
         }
     }
     
-    fn read_scope(&mut self, array: bool, start: usize)
-            -> Result<Scope<'a>, ParseError> {
+    fn read_scope(&mut self, scope: &mut Scope<'a>, array: bool, start: usize)
+            -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
         println!("scope, Array: {}", array);
         let mut was_key = false;
-        let mut scope = Scope::new();
         let mut key_found = false;
         let mut closed = false;
         while let Some(res) = self.tokens.next() {
@@ -168,7 +167,7 @@ impl<'a> Parser<'a> {
         if ! closed {
             return Err(UnfinishedScope { start: start });
         }
-        Ok(scope)
+        Ok(())
     }
     
     fn read_array(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
@@ -335,8 +334,11 @@ impl<'a> Parser<'a> {
             }
             let res = self.tokens.next().unwrap()?;
             match res {
-                (_, Whitespace(text)) | (_, Newline(text)) => {
+                (_, Whitespace(text)) => {
                     table.push_space(text);
+                }
+                (_, Newline(text)) => {
+                    table.push_newline(text.starts_with("\r"));
                 }
                 (_, Comment(text)) => {
                     table.push_comment(text);
@@ -370,11 +372,16 @@ impl<'a> Parser<'a> {
         let mut top_table = TomlTable::new(false);
         while let Some(res) = self.tokens.next() {
             match res? {
-                (_, Whitespace(text)) | (_, Newline(text)) => {
+                (_, Whitespace(text)) => {
                     top_table.push_space(text);
                 }
+                (_, Newline(text)) => {
+                    top_table.push_newline(text.starts_with("\r"));
+                }
                 (pos, SingleBracketOpen) => {
-                    let scope = self.read_scope(false, pos)?;
+                    let mut scope = Scope::new();
+                    self.read_scope(&mut scope, false, pos)?;
+                    
                     // TODO: Validate that the scope hasn't been used before
                     println!("Scope: {:?}", scope);
                     {
@@ -386,7 +393,8 @@ impl<'a> Parser<'a> {
                     
                 }
                 (pos, DoubleBracketOpen) => {
-                    let scope = self.read_scope(true, pos)?;
+                    let mut scope = Scope::new();
+                    let scope = self.read_scope(&mut scope, true, pos)?;
                     println!("Scope: {:?}", scope);
                     //let mut table = top_table.get_or_create_table(scope.path());
                     

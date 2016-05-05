@@ -56,7 +56,7 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    #[inline]
+    
     fn scope_is_table(&self) -> bool {
         if self.scope_stack.is_empty() {
             return false;
@@ -70,7 +70,7 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    #[inline]
+    
     fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
@@ -89,7 +89,7 @@ impl<'a> Tokens<'a> {
         return Ok((start, Whitespace(&self.text[self.start..])));
     }
     
-    #[inline]
+    
     fn read_key(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
@@ -113,7 +113,7 @@ impl<'a> Tokens<'a> {
         return Ok((start, Key(&self.text[self.start..])));
     }
     
-    #[inline]
+    
     fn read_comment(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
@@ -133,7 +133,7 @@ impl<'a> Tokens<'a> {
         return Ok((start, Comment(&self.text[self.start+1..])));
     }
     
-    #[inline]
+    
     fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
@@ -187,7 +187,7 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    #[inline]
+    
     fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
@@ -279,7 +279,7 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    #[inline]
+    
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
             -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -332,7 +332,6 @@ impl<'a> Tokens<'a> {
         Ok((start, Int(part)))
     }
     
-    #[inline]
     fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
             -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -381,7 +380,6 @@ impl<'a> Tokens<'a> {
         Ok((start, Float(part)))
     }
     
-    #[inline]
     fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;

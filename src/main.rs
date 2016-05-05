@@ -63,7 +63,7 @@ fn main() {
     test_lexer(&hard_example, false);
     
     match parse::parse(simple) {
-        Ok(table) => {
+        Ok(mut table) => {
             println!("Yay!");
             println!("Written output:");
             let mut out = String::new();
@@ -71,6 +71,17 @@ fn main() {
             println!("{}", out);
             assert_eq!(simple, &out);
             println!("Parsed table written and validated!");
+            table.get_or_create_table(&["hello"])
+                .expect("Could not find table 'hello'")
+                .insert("test", "value");
+            table.get_or_create_table(&["bob", "something"])
+                .expect("Could not find bob.something")
+                .insert("Hello snorri", "Would you care,\n for a cuppa\"\" value?");
+            table.insert("What_now_Smorri", "More strings, since other values aren't implemented yet");
+            let mut changed = String::new();
+            table.write(&mut changed);
+            println!("Changed:");
+            println!("{}", changed);
         }
         Err(err) => {
             println!("Parse error:");

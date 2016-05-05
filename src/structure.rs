@@ -1,22 +1,27 @@
 use std::fmt::Debug;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::borrow::Cow;
+use std::borrow::{Cow, Borrow};
 use std::char;
+use std::hash;
 
 #[derive(Debug, Clone)]
-pub struct TomlString<'a> { 
-    text: &'a str, 
-    literal: bool,
-    multiline: bool
+pub enum TomlString<'a> {
+    Text { text: &'a str, literal: bool, multiline: bool },
+    User(&'a str),
+    
 }
 impl<'a> TomlString<'a> {
     pub fn new(text: &'a str, literal: bool, multiline: bool) -> TomlString<'a> {
-        TomlString {
+        TomlString::Text {
             text: text,
             literal: literal,
             multiline: multiline,
         }
+    }
+    
+    fn from_user(text: &'a str) -> TomlString<'a> {
+        TomlString::User(text)
     }
 }
 
@@ -32,6 +37,45 @@ pub enum TomlInt<'a> {
     Value(i64),
 }
 
+fn escape_string(text: &str) -> String {
+    let mut escaped = String::new();
+    escaped.push('"');
+    for ch in text.chars() {
+        match ch {
+            '\n' => escaped.push_str("\\n"),
+            '\t' => escaped.push_str("\\t"),
+            '\r' => escaped.push_str("\\r"),
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            other => {
+                escaped.push(other);
+            }
+        }
+    }
+    escaped.push('"');
+    escaped
+}
+
+fn create_key<'a>(text: &'a str) -> Cow<'a, str> {
+    let mut chars = text.chars();
+    let mut simple = true;
+    match chars.next().unwrap() {
+        'a' ... 'z' | 'A' ... 'Z' | '_' | '-' => {
+            for ch in text.chars() {
+                match ch {
+                    'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {}
+                    _ => simple = false,
+                }
+            }
+        },
+        _ => simple = false,
+    }
+    if simple {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(escape_string(text))
+    }
+}
 
 /// Parses and cleans the given TOML string.
 pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a, str> {
@@ -62,11 +106,11 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     escaped = false;
                 }
                 'b' => {
-                    string.push(char::from_u32(0x0008u32).unwrap());
+                    string.push('\u{0008}');
                     escaped = false;
                 }
                 'f' => {
-                    string.push(char::from_u32(0x000Cu32).unwrap());
+                    string.push('\u{000C}');
                     escaped = false;
                 }
                 '"' => {
@@ -294,9 +338,12 @@ impl<'a> TomlValue<'a> {
     pub fn write(&self, out: &mut String) {
         use self::TomlValue::*;
         match *self {
-            String(ref string) => {
-                write_string(string.text, string.literal, string.multiline, out);
+            String(TomlString::Text { text, literal, multiline}) => {
+                write_string(text, literal, multiline, out);
             },
+            String(TomlString::User(text)) => {
+                out.push_str(&escape_string(text));
+            }
             Bool(b) => out.push_str(if b {"true"} else {"false"}),
             Int(TomlInt::Text(text)) => out.push_str(text),
             Int(TomlInt::Value(v)) => out.push_str(&format!("{}", v)),
@@ -308,10 +355,17 @@ impl<'a> TomlValue<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+impl<'a> From<&'a str> for TomlValue<'a> {
+    fn from(other: &'a str) -> TomlValue<'a> {
+        TomlValue::String(TomlString::from_user(other))
+    }
+}
+
+#[derive(Debug, Eq, Clone, Copy)]
 pub enum TomlKey<'a> {
     Plain(&'a str),
     String { text: &'a str, literal: bool, multiline: bool },
+    User(&'a str),
 }
 impl<'a> TomlKey<'a> {
     pub fn from_key(key: &'a str) -> TomlKey<'a> {
@@ -329,18 +383,64 @@ impl<'a> TomlKey<'a> {
             String { text, literal, multiline } => {
                 write_string(text, literal, multiline, out);
             }
+            User(text) => {
+                out.push_str(create_key(text).borrow());
+            }
         }
+    }
+    
+    fn normalized(&self) -> Cow<'a, str> {
+        use self::TomlKey::*;
+        match *self {
+            Plain(text) | User(text) => Cow::Borrowed(text),
+            String { text, literal, multiline } => clean_string(text, literal, multiline),
+        }
+    }
+}
+
+impl<'a> PartialEq for TomlKey<'a> {
+    fn eq(&self, other: &TomlKey<'a>) -> bool {
+        self.normalized() == other.normalized()
+    }
+    
+    fn ne(&self, other: &TomlKey<'a>) -> bool {
+        self.normalized() != other.normalized()
+    }
+}
+
+impl<'a> hash::Hash for TomlKey<'a> {
+    fn hash<H>(&self, state: &mut H) where H: hash::Hasher {
+        self.normalized().hash(state);
+    }
+}
+
+impl<'a, 'b> From<&'b TomlKey<'a>> for TomlKey<'a> {
+    fn from(other: &TomlKey<'a>) -> TomlKey<'a> {
+        *other
+    }
+}
+// TODO: Make keys as simple as possible in the TOML representation
+impl<'a> From<&'a str> for TomlKey<'a> {
+    fn from(other: &'a str) -> TomlKey<'a> {
+        TomlKey::User(other)
+    }
+}
+
+// TODO: Undo this ugly hack by properly using generics
+impl<'a, 'b> From<&'b &'a str> for TomlKey<'a> {
+    fn from(other: &&'a str) -> TomlKey<'a> {
+        TomlKey::User(*other)
     }
 }
 
 #[derive(Debug)]
 enum TableItem<'a> {
     Space(&'a str),
+    Newline(&'a str),
     Comment(&'a str),
     Entry(ValueEntry<'a>),
     /// For inline tables
-    Comma, 
-    Scope(Scope<'a>), // Only used in the top-level table
+    Comma,
 }
 
 #[derive(Debug)]
@@ -369,6 +469,7 @@ pub struct TomlTable<'a> {
     inline: bool,
     order: Vec<TableItem<'a>>,
     items: HashMap<TomlKey<'a>, TomlValue<'a>>,
+    subtables: Vec<(Scope<'a>)>, // Only used in the top-level table
 }
 impl<'a> TomlTable<'a> {
     pub fn new(inline: bool) -> TomlTable<'a> {
@@ -376,6 +477,7 @@ impl<'a> TomlTable<'a> {
             inline: inline,
             order: Vec::new(),
             items: HashMap::new(),
+            subtables: Vec::new(),
         }
     }
     
@@ -383,16 +485,21 @@ impl<'a> TomlTable<'a> {
         self.order.push(TableItem::Space(space));
     }
     
+    pub fn push_newline(&mut self, cr: bool) {
+        self.order.push(TableItem::Newline(if cr { "\r\n" } else { "\n" }));
+    }
+    
     pub fn push_comment(&mut self, comment: &'a str) {
         self.order.push(TableItem::Comment(comment));
     }
     
     pub fn push_scope(&mut self, scope: Scope<'a>) {
-        self.order.push(TableItem::Scope(scope));
+        self.subtables.push(scope);
     }
     
-    pub fn insert_spaced(&mut self, key: TomlKey<'a>, value: TomlValue<'a>, 
+    pub fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
             before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
+        let key = key.into();
         let entry = ValueEntry { 
             key: key.clone(), before_eq: before_eq.unwrap_or(""), 
             after_eq: after_eq.unwrap_or("")
@@ -401,20 +508,23 @@ impl<'a> TomlTable<'a> {
         self.items.insert(key, value);
     }
     
-    pub fn get_or_create_table(&mut self, path: &[TomlKey<'a>])
-            -> Result<&mut TomlTable<'a>, CreatePathError> {
-        if path.is_empty() {
-            Ok(self)
-        } else {
-            let first = path[0].clone();
-            let rest = &path[1..];
-
-            match self.items.entry(first).or_insert(TomlValue::Table(TomlTable::new(false))) {
-                &mut TomlValue::Table(ref mut table) => {
-                    table.get_or_create_table(rest)
-                }
-                _ => {
-                    Err(CreatePathError::InvalidScopeTable)
+    pub fn get_or_create_table<I, P>(&mut self, path: P)
+            -> Result<&mut TomlTable<'a>, CreatePathError> 
+            where P: IntoIterator<Item=I>, I: Into<TomlKey<'a>> {
+        let mut iter = path.into_iter();
+        match iter.next() {
+            None => {
+                Ok(self)
+            }
+            Some(first) => {
+                let first = first.into();
+                match self.items.entry(first).or_insert(TomlValue::Table(TomlTable::new(false))) {
+                    &mut TomlValue::Table(ref mut table) => {
+                        table.get_or_create_table(iter)
+                    }
+                    _ => {
+                        Err(CreatePathError::InvalidScopeTable)
+                    }
                 }
             }
         }
@@ -456,12 +566,91 @@ impl<'a> TomlTable<'a> {
         self.items.is_empty()
     }
     
-    pub fn insert(&mut self, key: TomlKey<'a>, value: TomlValue<'a>) {
-        unimplemented!();
-        if self.items.contains_key(&key) {
-            
+    fn has_trailing_comma(&self) -> bool {
+        use self::TableItem::*;
+        for item in self.order.iter().rev() {
+            match *item {
+                Space(_) | Comment(_) | Newline(_) => {},
+                Entry(_) => return false,
+                /// For inline tables
+                Comma => return true, 
+            }
+        }
+        false
+    }
+    
+    fn last_indent(&mut self) -> &'a str {
+        use self::TableItem::*;
+        let mut last_was_entry = false;
+        for item in self.order.iter().rev() {
+            match *item {
+                Entry(_) => last_was_entry = true,
+                Space(text) => {
+                    if last_was_entry {
+                        return text
+                    }
+                }
+                Comment(_) | Comma | Newline(_) => last_was_entry = false,
+            }
+        }
+        ""
+    }
+    
+    /// Pushes the given items before the last space in the table
+    fn push_before_space(&mut self, items: Vec<TableItem<'a>>) {
+        if self.order.is_empty() {
+            self.order.extend(items);
         } else {
-            
+            let last = self.order.len() - 1;
+            let last_is_space = if let TableItem::Space(_) = self.order[last] {
+                true
+            } else {
+                false
+            };
+            if last_is_space {
+                let pop = self.order.pop().unwrap();
+                for item in items {
+                    self.order.push(item);
+                }
+                self.order.push(pop);
+            } else {
+                for item in items {
+                    self.order.push(item);
+                }
+            }
+        }
+    }
+    
+    pub fn insert<K, V>(&mut self, key: K, value: V) 
+            where K: Into<TomlKey<'a>>, V: Into<TomlValue<'a>> {
+        use self::TableItem::*;
+        let key = key.into();
+        let value = value.into();
+        if self.items.contains_key(&key) {
+            self.items.insert(key, value);
+        } else {
+            if ! self.inline {
+                let indent = self.last_indent();
+                let entry = ValueEntry { 
+                    key: key.clone(), before_eq: " ", 
+                    after_eq: " "
+                };
+                self.items.insert(key, value);
+                let mut values = Vec::new();
+                let indent = self.last_indent();
+                if indent != "" {
+                    values.push(Space(indent));
+                }
+                values.push(Entry(entry));
+                values.push(Newline("\n")); // TODO: cr
+                self.push_before_space(values);
+            } else {
+                if ! self.has_trailing_comma() {
+                    self.order.push(Comma);
+                    self.order.push(Space(" "));
+                }
+                self.insert_spaced(key, value, Some(" "), Some(" "));
+            }
         }
     }
     
@@ -472,7 +661,7 @@ impl<'a> TomlTable<'a> {
         }
         for item in self.order.iter() {
             match *item {
-                Space(text) => out.push_str(text),
+                Space(text) | Newline(text) => out.push_str(text),
                 Comment(text) => {
                     out.push('#');
                     out.push_str(text);
@@ -482,15 +671,14 @@ impl<'a> TomlTable<'a> {
                     self.items.get(&entry.key).unwrap().write(out);
                 }
                 Comma => out.push(','), 
-                Scope(ref scope) => {
-                    scope.write(out);
-                    // TODO: Un-hack ;)
-                    self.get_path(scope.path()).unwrap().write(out);
-                }
             }
         }
         if self.inline {
             out.push('}');
+        }
+        for scope in self.subtables.iter() {
+            scope.write(out);
+            self.get_path(scope.path()).unwrap().write(out);
         }
     }
 }
