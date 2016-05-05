@@ -111,14 +111,14 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
     Cow::Owned(string)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ScopeItem<'a> {
     Dot,
     Space(&'a str),
     Part(usize),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
     keys: Vec<TomlKey<'a>>,
@@ -294,6 +294,11 @@ struct ValueEntry<'a> {
     after_eq: &'a str,}
 
 #[derive(Debug)]
+pub enum CreatePathError {
+    InvalidScopeTable
+}
+
+#[derive(Debug)]
 pub struct TomlTable<'a> {
     inline: bool,
     order: Vec<TableItem<'a>>,
@@ -324,6 +329,38 @@ impl<'a> TomlTable<'a> {
         };
         self.order.push(TableItem::Entry(entry));
         self.items.insert(key, value);
+    }
+    
+    pub fn get_or_create_table(&mut self, path: &[TomlKey<'a>])
+            -> Result<&mut TomlTable<'a>, CreatePathError> {
+        if path.is_empty() {
+            Ok(self)
+        } else {
+            let first = path[0].clone();
+            let rest = &path[1..];
+
+            match self.items.entry(first).or_insert(TomlValue::Table(TomlTable::new(false))) {
+                &mut TomlValue::Table(ref mut table) => {
+                    table.get_or_create_table(rest)
+                }
+                _ => {
+                    Err(CreatePathError::InvalidScopeTable)
+                }
+            }
+        }
+    }
+    
+    pub fn get_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
+        if path.is_empty() {
+            self
+        } else {
+            unimplemented!();
+        }
+    }
+    
+    
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
     }
     
     pub fn insert(&mut self, key: TomlKey<'a>, value: TomlValue<'a>) {

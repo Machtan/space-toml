@@ -3,7 +3,7 @@ use std::iter::{Iterator, Peekable};
 use std::borrow::Cow;
 
 use tokens::{self, TokenError, Token, Tokens};
-use structure::{TomlTable, TomlArray, TomlKey, TomlValue, clean_string, Scope};
+use structure::{TomlTable, TomlArray, TomlKey, TomlValue, clean_string, Scope, CreatePathError};
 use debug;
 
 pub fn parse<'a>(text: &'a str) -> Result<TomlTable<'a>, ParseError> {
@@ -23,6 +23,9 @@ pub enum ParseError {
     DoubleCommaInArray { start: usize, pos: usize },
     MissingComma { start: usize, pos: usize },
     InvalidTableItem { pos: usize },
+    TableDefinedTwice { pos: usize, original: usize },
+    KeyDefinedTwice { pos: usize, original: usize },
+    InvalidScopePath,
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -77,13 +80,20 @@ impl ParseError {
                 println!("Invalid top_level item found at {}:{} :", line, col);
                 debug::show_invalid_character(text, pos);
             }
-            
+            _ => {
+                unimplemented!();
+            }
         }
     }
 }
 impl From<TokenError> for ParseError {
     fn from(err: TokenError) -> ParseError {
         ParseError::TokenError(err)
+    }
+}
+impl From<CreatePathError> for ParseError {
+    fn from(err: CreatePathError) -> ParseError {
+        ParseError::InvalidScopePath
     }
 }
 
@@ -309,38 +319,81 @@ impl<'a> Parser<'a> {
         }
     }
     
-    pub fn read_table(&mut self) -> Result<TomlTable<'a>, ParseError> {
-        
-        unimplemented!();
-    }
-    
-    pub fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
+    fn read_table(&mut self, table: &mut TomlTable<'a>) -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
-        let mut top_table = TomlTable::new(false);
-        while let Some(res) = self.tokens.next() {
-            let res = res?;
+        while self.tokens.peek().is_some() {
+            match self.tokens.peek().unwrap() {
+                &Err(ref e) => {
+                    return Err(ParseError::from(e.clone())); 
+                }
+                &Ok((_, SingleBracketOpen)) | &Ok((_, DoubleBracketOpen)) => {
+                    return Ok(());
+                }
+                _ => {}
+            }
+            let res = self.tokens.next().unwrap()?;
             match res {
                 (_, Whitespace(text)) | (_, Newline(text)) => {
-                    top_table.push_space(text);
-                }
-                (pos, SingleBracketOpen) => {
-                    let scope = self.read_scope(false, pos)?;
-                    println!("Scope: {:?}", scope);
-                    let table = self.read_table()?;
-                }
-                (pos, DoubleBracketOpen) => {
-                    let scope = self.read_scope(true, pos)?;
-                    println!("Scope: {:?}", scope);
-                    let table = self.read_table()?;
+                    table.push_space(text);
                 }
                 (_, Comment(text)) => {
-                    top_table.push_comment(text);
+                    table.push_comment(text);
                 }
                 (pos, Key(_)) | (pos, String { .. }) => {
                     let key = if let Key(text) = res.1 {
                         TomlKey::Plain(text)
                     } else if let String { text, literal, multiline } = res.1 {
+                        TomlKey::String {
+                            text: text, literal: literal, multiline: multiline
+                        }
+                    } else {
+                        unreachable!();
+                    };
+                    let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
+                    println!("{:?} = {:?}", key, value);
+                    // TODO: Check for duplicate keys
+                    table.insert_spaced(key, value, before_eq, after_eq);
+                }
+                (pos, _) => {
+                    return Err(InvalidTableItem { pos: pos });
+                }
+            }
+        }
+        Ok(())
+    }
+    
+    fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
+        use tokens::Token::*;
+        use self::ParseError::*;
+        let mut top_table = TomlTable::new(false);
+        while let Some(res) = self.tokens.next() {
+            match res? {
+                (_, Whitespace(text)) | (_, Newline(text)) => {
+                    top_table.push_space(text);
+                }
+                (pos, SingleBracketOpen) => {
+                    let scope = self.read_scope(false, pos)?;
+                    // TODO: Validate that the scope hasn't been used before
+                    println!("Scope: {:?}", scope);
+                    let mut table = top_table.get_or_create_table(scope.path())?;
+                    self.read_table(&mut table)?;
+                    println!("Table: {:?}", table);
+                }
+                (pos, DoubleBracketOpen) => {
+                    let scope = self.read_scope(true, pos)?;
+                    println!("Scope: {:?}", scope);
+                    //let mut table = top_table.get_or_create_table(scope.path());
+                    
+                    //println!("Table: {:?}", table);
+                }
+                (_, Comment(text)) => {
+                    top_table.push_comment(text);
+                }
+                (pos, Key(_)) | (pos, String { .. }) => {
+                    let key = if let Key(text) = res?.1 {
+                        TomlKey::Plain(text)
+                    } else if let String { text, literal, multiline } = res?.1 {
                         TomlKey::String {
                             text: text, literal: literal, multiline: multiline
                         }
@@ -356,6 +409,6 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        unimplemented!();
+        Ok(top_table)
     }
 }
