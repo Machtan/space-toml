@@ -279,6 +279,28 @@ impl<'a> Tokens<'a> {
         }
     }
     
+    // TODO: Don't do this as brokenly
+    fn read_datetime(&mut self) -> Result<(usize, Token<'a>), TokenError> {
+        use self::Token::*;
+        use self::TokenError::*;
+        let start = self.start;
+        while let Some(&(i, ch)) = self.chars.peek() {
+            match ch {
+                '0' ... '9' | '-' | 'T' | ':' | 't' | 'Z' | '.' => {
+                    self.chars.next();
+                }
+                _ => {
+                    let part = &self.text[self.start..i];
+                    self.start = i;
+                    return Ok((start, DateTime(part)));
+                }
+            }
+        }
+        let part = &self.text[self.start..];
+        self.start = self.text.len();
+        Ok((start, DateTime(part)))
+    }
+    
     
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
             -> Result<(usize, Token<'a>), TokenError> {
@@ -292,7 +314,7 @@ impl<'a> Tokens<'a> {
                     self.chars.next();
                 }
                 '-' if datetime_possible => {
-                    panic!("No datetime support yet!");
+                    return self.read_datetime();
                 }
                 '.' => {
                     self.chars.next();

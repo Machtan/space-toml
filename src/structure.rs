@@ -281,7 +281,7 @@ pub enum TomlValue<'a> {
     Bool(bool),
     Int(TomlInt<'a>),
     Float(TomlFloat<'a>),
-    //DateTime(DateTime<UTC>),
+    DateTime(&'a str),
     Table(TomlTable<'a>),
     Array(TomlArray<'a>)
     //DateTimeArray(TomlArray<DateTime<UTC>>),
@@ -322,6 +322,10 @@ impl<'a> TomlValue<'a> {
         TomlValue::Float(TomlFloat::Text(text))
     }
     
+    pub fn datetime(text: &'a str) -> TomlValue<'a> {
+        TomlValue::DateTime(text)
+    }
+    
     pub fn is_same_type(&self, other: &TomlValue) -> bool {
         use self::TomlValue::*;
         match (self, other) {
@@ -346,6 +350,7 @@ impl<'a> TomlValue<'a> {
             }
             Bool(b) => out.push_str(if b {"true"} else {"false"}),
             Int(TomlInt::Text(text)) => out.push_str(text),
+            DateTime(text) => out.push_str(text),
             Int(TomlInt::Value(v)) => out.push_str(&format!("{}", v)),
             Float(TomlFloat::Text(text)) => out.push_str(text),
             Float(TomlFloat::Value(v)) => out.push_str(&format!("{}", v)),

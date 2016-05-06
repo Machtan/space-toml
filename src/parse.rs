@@ -312,6 +312,7 @@ impl<'a> Parser<'a> {
             (_, Float(text)) => Ok(TomlValue::float(text)),
             (_, String { text, literal, multiline }) => Ok(TomlValue::string(text, literal, multiline)),
             (_, Bool(value)) => Ok(TomlValue::bool(value)),
+            (_, DateTime(text)) => Ok(TomlValue::datetime(text)),
             (pos, SingleBracketOpen) => {
                 Ok(self.read_array(pos)?)
             }
