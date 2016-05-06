@@ -45,7 +45,7 @@ fn main() {
     arr = [ 1, 2   ,    3 
     ,]
     
-    #inline = { alice = "some", key = 2 }
+    inline = { alice = "some", key = 2 }
     "#;
     test_lexer(simple, false);
     

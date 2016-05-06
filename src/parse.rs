@@ -26,6 +26,7 @@ pub enum ParseError {
     TableDefinedTwice { pos: usize, original: usize },
     KeyDefinedTwice { pos: usize, original: usize },
     InvalidScopePath,
+    NonFinalComma { pos: usize },
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -199,10 +200,12 @@ impl<'a> Parser<'a> {
                         self.tokens.next();
                         array.push_comment(text);
                     }
-                    _ => {
+                    (pos, _) => {
+                        if was_comma {
+                            return Err(NonFinalComma { pos: pos });
+                        }
                         let value = self.read_value(start)?;
                         array.push(value);
-                        was_comma = false;
                         is_reading_value = false;
                     }
                 }
@@ -211,7 +214,6 @@ impl<'a> Parser<'a> {
                     (_, Comma) => {
                         array.push_comma();
                         self.tokens.next();
-                        was_comma = true;
                         is_reading_value = true;
                     }
                     (_, SingleBracketClose) => {
@@ -236,8 +238,68 @@ impl<'a> Parser<'a> {
         Ok(TomlValue::Array(array))
     }
     
-    fn read_inline_table(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
-        unimplemented!();
+    fn read_inline_table(&mut self, start: usize, table: &mut TomlTable<'a>)
+            -> Result<(), ParseError> {
+        use self::ParseError::*;
+        use tokens::Token::*;
+        let mut reading_key = true;
+        let mut was_comma = false;
+        while let Some(res) = self.tokens.next() {
+            if reading_key {
+                let res = res?;
+                match res {
+                    (_, Whitespace(text)) => {
+                        table.push_space(text);
+                    }
+                    (pos, Comma) => {
+                        if ! was_comma {
+                            was_comma = true;
+                        } else {
+                            return Err(DoubleCommaInArray { start: start, pos: pos });
+                        }
+                    }
+                    (pos, Key(_)) | (pos, String { .. }) => {
+                        if was_comma {
+                            return Err(NonFinalComma { pos: pos });
+                        }
+                        let key = if let Key(text) = res.1 {
+                            TomlKey::Plain(text)
+                        } else if let String { text, literal, multiline } = res.1 {
+                            TomlKey::String {
+                                text: text, literal: literal, multiline: multiline
+                            }
+                        } else {
+                            unreachable!();
+                        };
+                        let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
+                        // TODO: Check for duplicate keys
+                        table.insert_spaced(key, value, before_eq, after_eq);
+                        reading_key = false;
+                    }
+                    (_, CurlyClose) => {
+                        return Ok(());
+                    }
+                    (pos, _) => return Err(InvalidTableItem { pos: pos }),
+                }
+            } else {
+                match res? {
+                    (_, Whitespace(text)) => {
+                        table.push_space(text);
+                    }
+                    (_, Comma) => {
+                        table.push_comma();
+                        reading_key = true;
+                    }
+                    (_, CurlyClose) => {
+                        return Ok(());
+                    }
+                    (pos, _) => {
+                        return Err(MissingComma { start: start, pos: pos });
+                    }
+                }
+            }
+        }
+        Err(UnfinishedValue { start: start })
     }
     
     fn read_value(&mut self, start: usize)
@@ -254,7 +316,9 @@ impl<'a> Parser<'a> {
                 Ok(self.read_array(pos)?)
             }
             (pos, CurlyOpen) => {
-                Ok(self.read_inline_table(pos)?)
+                let mut table = TomlTable::new(true);
+                self.read_inline_table(pos, &mut table)?;
+                Ok(TomlValue::Table(table))
             }
             (pos, _) => Err(InvalidValue { start: start, pos: pos }),
         }        

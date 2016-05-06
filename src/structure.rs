@@ -485,6 +485,10 @@ impl<'a> TomlTable<'a> {
         self.order.push(TableItem::Space(space));
     }
     
+    pub fn push_comma(&mut self) {
+        self.order.push(TableItem::Comma);
+    }
+    
     pub fn push_newline(&mut self, cr: bool) {
         self.order.push(TableItem::Newline(if cr { "\r\n" } else { "\n" }));
     }
