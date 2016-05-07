@@ -12,6 +12,7 @@ enum LexerScope {
     Value,
 }
 
+/// Returns an iterator over the TOML tokens in the given text.
 pub fn tokens<'a>(text: &'a str) -> Tokens<'a> {
     Tokens::new(text)
 }
@@ -450,6 +451,7 @@ impl<'a> Tokens<'a> {
     }
 }
 
+/// A syntactical part of a document in the TOML format.
 #[derive(Debug, Clone, Copy)]
 pub enum Token<'a> {
     Whitespace(&'a str),
@@ -472,7 +474,8 @@ pub enum Token<'a> {
     Bool(bool),
 }
 
-impl<'a> Token<'a> {    
+impl<'a> Token<'a> {
+    /// Writes the TOML representation of this value to a string.  
     pub fn write(&self, out: &mut String) {
         use self::Token::*;
         match *self {
@@ -512,22 +515,34 @@ impl<'a> Token<'a> {
     }
 }
 
-
-
+/// An error found when tokenizing a TOML document.
 #[derive(Debug, Clone)]
 pub enum TokenError {
+    /// The character at this position is not a valid whitespace character by the TOML definition.
     InvalidWhitespace { pos: usize },
+    /// A literal string starting here was not closed.
     UnclosedLiteral { start: usize },
+    /// A regular string starting here was not closed.
     UnclosedString { start: usize },
+    /// A closing brace was found outside an open scope.
     UnmatchedClosingBrace { pos: usize },
+    /// A character that isn't valid for a key was found inside one.
     InvalidKeyCharacter { pos: usize },
+    /// A character that isn't valid in a value was found inside one.
     InvalidValueCharacter { start: usize, pos: usize },
+    /// A character that isn't valid for an integer was found inside one.
     InvalidIntCharacter { start: usize, pos: usize },
+    /// This escaped character in a regular string does not denote a valid escape sequence.
     InvalidEscapeCharacter { start: usize, pos: usize },
+    /// A character that isn't valid for a floating point number was found inside one.
     InvalidFloatCharacter { start: usize, pos: usize },
+    /// An underscore in an integer value was found at an invalid position.
     UnderscoreNotAfterNumber { start: usize, pos: usize },
 }
+
 impl TokenError {
+    // TODO: implement error::Error.
+    /// Shows this error.
     pub fn show(&self, text: &str) {
         use self::TokenError::*;
         match *self {

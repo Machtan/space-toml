@@ -1,17 +1,11 @@
-#![allow(unused)]
-#![feature(question_mark)]
+extern crate space_toml;
 
 use std::io::Read;
 use std::fs::File;
 
-mod debug;
-mod tokens;
-mod structure;
-mod parse;
-
 fn test_lexer(text: &str, verbose: bool) {
     let mut out = String::new();
-    let mut tokens = tokens::tokens(text);
+    let mut tokens = space_toml::tokens(text);
     
     while let Some(res) = tokens.next() {
         match res {
@@ -68,7 +62,7 @@ fn main() {
         .expect("Could not read the sample");
     test_lexer(&hard_example, false);
     
-    match parse::parse(simple) {
+    match space_toml::parse(simple) {
         Ok(mut table) => {
             println!("Yay!");
             println!("Written output:");

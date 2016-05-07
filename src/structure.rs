@@ -1,3 +1,4 @@
+//! Data types created by the parser and given to the client.
 use std::fmt::Debug;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -5,6 +6,9 @@ use std::borrow::{Cow, Borrow};
 use std::char;
 use std::hash;
 
+/// A TOML string value.
+/// "Normal\nwith escapes" 'Literal' 
+/// """multi-line normal""" '''multi-line literal'''
 #[derive(Debug, Clone)]
 pub enum TomlString<'a> {
     Text { text: &'a str, literal: bool, multiline: bool },
@@ -12,6 +16,7 @@ pub enum TomlString<'a> {
     
 }
 impl<'a> TomlString<'a> {
+    /// Creates a new TOML string from the values of the tokens given by the lexer.
     pub fn new(text: &'a str, literal: bool, multiline: bool) -> TomlString<'a> {
         TomlString::Text {
             text: text,
@@ -20,23 +25,31 @@ impl<'a> TomlString<'a> {
         }
     }
     
+    /// Creates a new TOML string from a user string.
+    /// This means that the string is formatted differently when written
+    /// (it has no 'set' format like the other string variant).
     fn from_user(text: &'a str) -> TomlString<'a> {
         TomlString::User(text)
     }
 }
 
+/// A TOML float value.
+/// 2.34.
 #[derive(Debug)]
 pub enum TomlFloat<'a> {
     Text(&'a str),
     Value(f64),
 }
 
+/// A TOML integer value.
+/// 3 32_000.
 #[derive(Debug)]
 pub enum TomlInt<'a> {
     Text(&'a str),
     Value(i64),
 }
 
+/// Escapes a user-provided string as a TOML string.
 fn escape_string(text: &str) -> String {
     let mut escaped = String::new();
     escaped.push('"');
@@ -56,6 +69,9 @@ fn escape_string(text: &str) -> String {
     escaped
 }
 
+/// Creates a TOML key from a user-supplied key. 
+/// If the key is valid as a 'plain' TOML key, it is borrowed,
+/// but otherwise an escaped string will be created.
 fn create_key<'a>(text: &'a str) -> Cow<'a, str> {
     let mut chars = text.chars();
     let mut simple = true;
@@ -152,6 +168,7 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
     Cow::Owned(string)
 }
 
+/// A format item for a TOML scope (table or array of tables).
 #[derive(Debug, Clone)]
 enum ScopeItem<'a> {
     Dot,
@@ -159,6 +176,8 @@ enum ScopeItem<'a> {
     Part(usize),
 }
 
+/// A toml scope.
+/// '''[ hello . world ]'''.
 #[derive(Debug, Clone)]
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
@@ -166,28 +185,34 @@ pub struct Scope<'a> {
 }
 
 impl<'a> Scope<'a> {
+    /// Creates a new scope.
     pub fn new() -> Scope<'a> {
         Scope { ordering: Vec::new(), keys: Vec::new() }
     }
     
+    /// Pushes a path separator '.' to the scope format order.
     pub fn push_dot(&mut self) {
         self.ordering.push(ScopeItem::Dot);
     }
     
+     /// Pushes a space to the scope format order.
     pub fn push_space(&mut self, text: &'a str) {
         self.ordering.push(ScopeItem::Space(text));
     }
     
+    /// Pushes a key to the scope format order.
     pub fn push_key(&mut self, key: TomlKey<'a>) {
         let new_index = self.keys.len();
         self.keys.push(key);
         self.ordering.push(ScopeItem::Part(new_index));
     }
     
-    pub fn path(&self) -> &[TomlKey<'a>] {
+    /// Returns a reference to the path this scope describes.
+    pub fn path(&self) -> &Vec<TomlKey<'a>> {
         &self.keys
     }
     
+    /// Writes this scope to a string in the TOML format.
     pub fn write(&self, out: &mut String) {
         use self::ScopeItem::*;
         out.push('[');
@@ -204,29 +229,35 @@ impl<'a> Scope<'a> {
     }
 }
 
+/// A 'visual' item within a TOML array.
 #[derive(Debug)]
 enum ArrayItem<'a> {
     Space(&'a str),
     Comment(&'a str),
+    /// An index into the contained items of the array.
     Item(usize),
     Comma,
 }
 
+/// A homogenous array of TOML values (+ the array's visual representation).
 #[derive(Debug)]
 pub struct TomlArray<'a> {
     items: Vec<TomlValue<'a>>,
     order: Vec<ArrayItem<'a>>,
 }
 
-impl<'a> TomlArray<'a> {
-    pub fn new() -> TomlArray<'a> {
-        TomlArray {
-            items: Vec::new(),
-            order: Vec::new(),
-        }
-    }
-    
-    pub fn push(&mut self, value: TomlValue<'a>) -> Result<(), String> {
+/// A protected interface for the TomlArray.
+pub trait TomlArrayPrivate<'a> {
+    fn push(&mut self, value: TomlValue<'a>) -> Result<(), String>;
+    fn push_space(&mut self, space: &'a str);
+    fn push_comma(&mut self);
+    fn push_comment(&mut self, comment: &'a str);
+}
+
+impl<'a> TomlArrayPrivate<'a> for TomlArray<'a> {
+    /// Pushes a new value to the array. 
+    /// Errors if the value is of a different type than the first element of the array.
+    fn push(&mut self, value: TomlValue<'a>) -> Result<(), String> {
         if let Some(first) = self.items.get(0) {
             if ! first.is_same_type(&value) {
                 return Err(format!("Attempted to insert a value of type {:?} into an array of type {:?}", value, first));
@@ -237,24 +268,43 @@ impl<'a> TomlArray<'a> {
         Ok(())
     }
     
-    pub fn push_space(&mut self, space: &'a str) {
+    /// Pushes an amount of whitespace to the array format order.
+    fn push_space(&mut self, space: &'a str) {
         self.order.push(ArrayItem::Space(space));
     }
     
-    pub fn push_comma(&mut self) {
+    /// Pushes a comma to the array format order.
+    fn push_comma(&mut self) {
         self.order.push(ArrayItem::Comma);
     }
     
-    /// This also pushes a newline.
-    pub fn push_comment(&mut self, comment: &'a str) {
+    /// Pushes a comment and a newline (CR currently NOT handled) to the array format order.
+    fn push_comment(&mut self, comment: &'a str) {
         self.order.push(ArrayItem::Comment(comment));
         self.order.push(ArrayItem::Space("\n"));
     }
+}
+
+impl<'a> TomlArray<'a> {
+    /// Creates a new TOML array.
+    pub fn new() -> TomlArray<'a> {
+        TomlArray {
+            items: Vec::new(),
+            order: Vec::new(),
+        }
+    }
     
+    /// Returns the items of this array.
+    pub fn items(&self) -> &Vec<TomlValue<'a>> {
+        &self.items
+    }
+    
+    /// Returns whether this array is empty of values (it might still contain formatting info).
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
     
+    /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::ArrayItem::*;
         out.push('[');
@@ -275,19 +325,20 @@ impl<'a> TomlArray<'a> {
     }
 }
 
+/// A value in the TOML system.
 #[derive(Debug)]
 pub enum TomlValue<'a> {
     String(TomlString<'a>),
     Bool(bool),
     Int(TomlInt<'a>),
     Float(TomlFloat<'a>),
+    /// This is not validated and just given as a string. Use at your own risk.
     DateTime(&'a str),
     Table(TomlTable<'a>),
     Array(TomlArray<'a>)
-    //DateTimeArray(TomlArray<DateTime<UTC>>),
-    //TableArray(Vec<TomlTable>),
 }
 
+/// Writes the TOML representation of a TOML string to another string.
 fn write_string(text: &str, literal: bool, multiline: bool, out: &mut String) {
     match (literal, multiline) {
         (true, true) => out.push_str("'''"),
@@ -304,28 +355,44 @@ fn write_string(text: &str, literal: bool, multiline: bool, out: &mut String) {
     }
 }
 
-impl<'a> TomlValue<'a> {
-    /// Creates a new integer
-    pub fn int(text: &'a str) -> TomlValue<'a> {
+/// A protected interface for TomlValue.
+pub trait TomlValuePrivate<'a> {
+    fn int(text: &'a str) -> TomlValue<'a>;
+    fn bool(value: bool) -> TomlValue<'a>;
+    fn string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a>;
+    fn float(text: &'a str) -> TomlValue<'a>;
+    fn datetime(text: &'a str) -> TomlValue<'a>;
+}
+
+impl<'a> TomlValuePrivate<'a> for TomlValue<'a> {
+    /// Wraps a new integer.
+    fn int(text: &'a str) -> TomlValue<'a> {
         TomlValue::Int(TomlInt::Text(text))
     }
     
-    pub fn bool(value: bool) -> TomlValue<'a> {
+    /// Wraps a new bool.
+    fn bool(value: bool) -> TomlValue<'a> {
         TomlValue::Bool(value)
     }
     
-    pub fn string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a> {
+    /// Wraps a new string.
+    fn string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a> {
         TomlValue::String(TomlString::new(text, literal, multiline))
     }
     
-    pub fn float(text: &'a str) -> TomlValue<'a> {
+    /// Wraps a new float.
+    fn float(text: &'a str) -> TomlValue<'a> {
         TomlValue::Float(TomlFloat::Text(text))
     }
     
-    pub fn datetime(text: &'a str) -> TomlValue<'a> {
+    /// Wraps a new datetime.
+    fn datetime(text: &'a str) -> TomlValue<'a> {
         TomlValue::DateTime(text)
     }
-    
+}
+
+impl<'a> TomlValue<'a> {
+    /// Checks whether this value has the same variant as the given value.
     pub fn is_same_type(&self, other: &TomlValue) -> bool {
         use self::TomlValue::*;
         match (self, other) {
@@ -339,6 +406,7 @@ impl<'a> TomlValue<'a> {
         }
     }
     
+    /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TomlValue::*;
         match *self {
@@ -366,21 +434,36 @@ impl<'a> From<&'a str> for TomlValue<'a> {
     }
 }
 
+/// A TOML key. Used for both scope path elements, and for identifying table entries.
+/// key = "something"
+/// [ key. other_key . third-key ]
 #[derive(Debug, Eq, Clone, Copy)]
 pub enum TomlKey<'a> {
     Plain(&'a str),
     String { text: &'a str, literal: bool, multiline: bool },
     User(&'a str),
 }
-impl<'a> TomlKey<'a> {
-    pub fn from_key(key: &'a str) -> TomlKey<'a> {
+
+/// Protected interface for the TomlKey.
+pub trait TomlKeyPrivate<'a> {
+    fn from_key(key: &'a str) -> TomlKey<'a>;
+    fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a>;
+}
+
+impl<'a> TomlKeyPrivate<'a> for TomlKey<'a> {
+    /// Wraps a plain TOML key.
+    fn from_key(key: &'a str) -> TomlKey<'a> {
         TomlKey::Plain(key)
     }
     
-    pub fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a> {
+    /// Wraps a TOML string as a key.
+    fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a> {
         TomlKey::String { text: text, literal: literal, multiline: multiline }
     }
-    
+}
+
+impl<'a> TomlKey<'a> {
+    /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TomlKey::*;
         match *self {
@@ -394,7 +477,8 @@ impl<'a> TomlKey<'a> {
         }
     }
     
-    fn normalized(&self) -> Cow<'a, str> {
+    /// Returns the key encoded as a Rust string.
+    pub fn normalized(&self) -> Cow<'a, str> {
         use self::TomlKey::*;
         match *self {
             Plain(text) | User(text) => Cow::Borrowed(text),
@@ -424,7 +508,7 @@ impl<'a, 'b> From<&'b TomlKey<'a>> for TomlKey<'a> {
         *other
     }
 }
-// TODO: Make keys as simple as possible in the TOML representation
+
 impl<'a> From<&'a str> for TomlKey<'a> {
     fn from(other: &'a str) -> TomlKey<'a> {
         TomlKey::User(other)
@@ -438,37 +522,25 @@ impl<'a, 'b> From<&'b &'a str> for TomlKey<'a> {
     }
 }
 
+/// A format item for a TOML table.
 #[derive(Debug)]
 enum TableItem<'a> {
     Space(&'a str),
     Newline(&'a str),
     Comment(&'a str),
-    Entry(ValueEntry<'a>),
+    Entry { key: TomlKey<'a>, before_eq: &'a str, after_eq: &'a str, },
     /// For inline tables
     Comma,
 }
 
-#[derive(Debug)]
-struct ValueEntry<'a> {
-    key: TomlKey<'a>,
-    before_eq: &'a str,
-    after_eq: &'a str,
-}
-
-impl<'a> ValueEntry<'a> {
-    pub fn write(&self, out: &mut String) {
-        self.key.write(out);
-        out.push_str(self.before_eq);
-        out.push('=');
-        out.push_str(self.after_eq);
-    }
-}
-
+/// An error found when creating a new table from a given key path.
 #[derive(Debug)]
 pub enum CreatePathError {
+    // TODO: Add data
     InvalidScopeTable
 }
 
+/// A TOML table.
 #[derive(Debug)]
 pub struct TomlTable<'a> {
     inline: bool,
@@ -476,7 +548,64 @@ pub struct TomlTable<'a> {
     items: HashMap<TomlKey<'a>, TomlValue<'a>>,
     subtables: Vec<(Scope<'a>)>, // Only used in the top-level table
 }
+
+/// A protected interface for a the TOML table.
+pub trait TomlTablePrivate<'a> {
+    fn push_space(&mut self, space: &'a str);
+    fn push_comma(&mut self);
+    fn push_newline(&mut self, cr: bool);
+    fn push_comment(&mut self, comment: &'a str);
+    fn push_scope(&mut self, scope: Scope<'a>);
+    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
+            before_eq: Option<&'a str>, after_eq: Option<&'a str>);
+    
+}
+
+impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
+    /// Pushes a space to the format order.
+    fn push_space(&mut self, space: &'a str) {
+        self.order.push(TableItem::Space(space));
+    }
+    
+    /// Pushes a comma to the format order.
+    /// Note: Only for inline tables.
+    fn push_comma(&mut self) {
+        self.order.push(TableItem::Comma);
+    }
+    
+    /// Pushes a newline to the format order.
+    /// Note: Only for regular tables.
+    fn push_newline(&mut self, cr: bool) {
+        self.order.push(TableItem::Newline(if cr { "\r\n" } else { "\n" }));
+    }
+    
+    /// Pushes a comment to the format order.
+    /// Note: Only for regular tables.
+    fn push_comment(&mut self, comment: &'a str) {
+        self.order.push(TableItem::Comment(comment));
+    }
+    
+    /// Pushes a table / table-array scope to the format order.
+    /// Note: Only for the top-level table.
+    fn push_scope(&mut self, scope: Scope<'a>) {
+        self.subtables.push(scope);
+    }
+    
+    /// Inserts the given key as an entry to the table with the given sapce.
+    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
+            before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
+        let key = key.into();
+        let entry = TableItem::Entry { 
+            key: key.clone(), before_eq: before_eq.unwrap_or(""), 
+            after_eq: after_eq.unwrap_or("")
+        };
+        self.order.push(entry);
+        self.items.insert(key, value);
+    }
+}
+
 impl<'a> TomlTable<'a> {
+    /// Creates a new table.
     pub fn new(inline: bool) -> TomlTable<'a> {
         TomlTable {
             inline: inline,
@@ -486,37 +615,7 @@ impl<'a> TomlTable<'a> {
         }
     }
     
-    pub fn push_space(&mut self, space: &'a str) {
-        self.order.push(TableItem::Space(space));
-    }
-    
-    pub fn push_comma(&mut self) {
-        self.order.push(TableItem::Comma);
-    }
-    
-    pub fn push_newline(&mut self, cr: bool) {
-        self.order.push(TableItem::Newline(if cr { "\r\n" } else { "\n" }));
-    }
-    
-    pub fn push_comment(&mut self, comment: &'a str) {
-        self.order.push(TableItem::Comment(comment));
-    }
-    
-    pub fn push_scope(&mut self, scope: Scope<'a>) {
-        self.subtables.push(scope);
-    }
-    
-    pub fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
-            before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
-        let key = key.into();
-        let entry = ValueEntry { 
-            key: key.clone(), before_eq: before_eq.unwrap_or(""), 
-            after_eq: after_eq.unwrap_or("")
-        };
-        self.order.push(TableItem::Entry(entry));
-        self.items.insert(key, value);
-    }
-    
+    /// Returns the table at the given path, potentially creating tables at all the path links.
     pub fn get_or_create_table<I, P>(&mut self, path: P)
             -> Result<&mut TomlTable<'a>, CreatePathError> 
             where P: IntoIterator<Item=I>, I: Into<TomlKey<'a>> {
@@ -539,7 +638,8 @@ impl<'a> TomlTable<'a> {
         }
     }
     
-    pub fn get_path(&self, path: &[TomlKey<'a>])
+    /// Attempts to find a value at the given path in the table.
+    pub fn find_value(&self, path: &[TomlKey<'a>])
             -> Option<&TomlValue<'a>> {
         if path.is_empty() {
             None
@@ -551,7 +651,7 @@ impl<'a> TomlTable<'a> {
 
             match self.items.get(&first) {
                 Some(&TomlValue::Table(ref table)) => {
-                    table.get_path(rest)
+                    table.find_value(rest)
                 }
                 Some(_) => {
                     // TODO: Return an error here
@@ -562,6 +662,7 @@ impl<'a> TomlTable<'a> {
         }
     }
     
+    /// Unimplemented.
     pub fn get_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
         if path.is_empty() {
             self
@@ -570,17 +671,18 @@ impl<'a> TomlTable<'a> {
         }
     }
     
-    
+    /// Returns whether the table is empty. The table might still contain format items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
     
+    /// Returns whether the inline table has a trailing comma.
     fn has_trailing_comma(&self) -> bool {
         use self::TableItem::*;
         for item in self.order.iter().rev() {
             match *item {
                 Space(_) | Comment(_) | Newline(_) => {},
-                Entry(_) => return false,
+                Entry { .. } => return false,
                 /// For inline tables
                 Comma => return true, 
             }
@@ -588,6 +690,7 @@ impl<'a> TomlTable<'a> {
         false
     }
     
+    /// Returns the last indentation of a key/value pair in the table.
     fn last_indent(&mut self) -> &'a str {
         use self::TableItem::*;
         let mut entry_found = false;
@@ -596,7 +699,7 @@ impl<'a> TomlTable<'a> {
         let mut first_space = None;
         for item in self.order.iter().rev() {
             match *item {
-                Entry(_) => {
+                Entry { .. } => {
                     entry_found = true;
                     last_was_entry = true;
                 }
@@ -643,6 +746,8 @@ impl<'a> TomlTable<'a> {
         }
     }
     
+    /// Inserts a new item into the table.
+    /// Note: This function attempts to be smart with the formatting.
     pub fn insert<K, V>(&mut self, key: K, value: V) 
             where K: Into<TomlKey<'a>>, V: Into<TomlValue<'a>> {
         use self::TableItem::*;
@@ -653,7 +758,7 @@ impl<'a> TomlTable<'a> {
         } else {
             if ! self.inline {
                 let indent = self.last_indent();
-                let entry = ValueEntry { 
+                let entry = Entry { 
                     key: key.clone(), before_eq: " ", 
                     after_eq: " "
                 };
@@ -663,19 +768,29 @@ impl<'a> TomlTable<'a> {
                 if indent != "" {
                     values.push(Space(indent));
                 }
-                values.push(Entry(entry));
+                values.push(entry);
                 values.push(Newline("\n")); // TODO: cr
                 self.push_before_space(values);
             } else {
-                if ! self.has_trailing_comma() {
+                let had_comma = self.has_trailing_comma();
+                if ! had_comma {
                     self.order.push(Comma);
                     self.order.push(Space(" "));
+                } else if ! self.order.is_empty() { // Pad with space
+                    let last = self.order.len() - 1;
+                    if let Comma = self.order[last] {
+                        self.order.push(Space(" "));
+                    }
                 }
                 self.insert_spaced(key, value, Some(" "), Some(" "));
+                if had_comma {
+                    self.order.push(Comma);
+                }
             }
         }
     }
     
+    /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TableItem::*;
         if self.inline {
@@ -688,9 +803,12 @@ impl<'a> TomlTable<'a> {
                     out.push('#');
                     out.push_str(text);
                 }
-                Entry(ref entry) => {
-                    entry.write(out);
-                    self.items.get(&entry.key).unwrap().write(out);
+                Entry { key, before_eq, after_eq } => {
+                    key.write(out);
+                    out.push_str(before_eq);
+                    out.push('=');
+                    out.push_str(after_eq);
+                    self.items.get(&key).unwrap().write(out);
                 }
                 Comma => out.push(','), 
             }
@@ -700,7 +818,7 @@ impl<'a> TomlTable<'a> {
         }
         for scope in self.subtables.iter() {
             scope.write(out);
-            self.get_path(scope.path()).unwrap().write(out);
+            self.find_value(scope.path()).unwrap().write(out);
         }
     }
 }

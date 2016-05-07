@@ -3,29 +3,47 @@ use std::iter::{Iterator, Peekable};
 use std::borrow::Cow;
 
 use tokens::{self, TokenError, Token, Tokens};
-use structure::{TomlTable, TomlArray, TomlKey, TomlValue, clean_string, Scope, CreatePathError};
+use structure::{TomlTable, TomlTablePrivate, TomlKey, TomlKeyPrivate, clean_string, Scope, CreatePathError};
+use structure::{TomlValue, TomlValuePrivate, TomlArray, TomlArrayPrivate};
 use debug;
 
+/// Parses the given text as a TOML document and returns the top-level table for the document.
 pub fn parse<'a>(text: &'a str) -> Result<TomlTable<'a>, ParseError> {
     let mut parser = Parser::new(text);
     parser.parse()
 }
 
+/// An error found when parsing a TOML document.
 #[derive(Debug)]
 pub enum ParseError {
+    /// The tokenizer/validator found an error in the input text.
     TokenError(TokenError),
+    /// A part of this table or table array scope is invalid.
     InvalidScope { start: usize, pos: usize },
+    /// The scope starting here wasn't completed.
     UnfinishedScope { start: usize },
+    /// The item starting here wasn't completed.
     UnfinishedItem { start: usize },
+    /// The value starting here wasn't finished.
     UnfinishedValue { start: usize },
+    /// This doesn't represent a valid TOML value.
     InvalidValue { start: usize, pos: usize },
+    /// An equals sign was expected after a key.
     MissingEquals { start: usize, pos: usize },
+    /// A value is missing between two commas in an array.
     DoubleCommaInArray { start: usize, pos: usize },
+    /// A comma is missing between two values in an array.
     MissingComma { start: usize, pos: usize },
+    /// This isn't a valid item inside a table.
     InvalidTableItem { pos: usize },
+    // TODO: Support this!
+    /// This table was defined twice
     TableDefinedTwice { pos: usize, original: usize },
+    /// This key path was defined twice.
     KeyDefinedTwice { pos: usize, original: usize },
+    /// This path is invalid (?).
     InvalidScopePath,
+    /// A comma was found before any values.
     NonFinalComma { pos: usize },
 }
 impl ParseError {
