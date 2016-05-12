@@ -1,4 +1,3 @@
-#![allow(unused)]
 #![feature(question_mark)]
 
 mod debug;

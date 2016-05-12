@@ -1,14 +1,13 @@
 
 use std::iter::{Iterator, Peekable};
-use std::borrow::Cow;
 
 use tokens::{self, TokenError, Token, Tokens};
-use structure::{TomlTable, TomlTablePrivate, TomlKey, TomlKeyPrivate, clean_string, Scope, CreatePathError};
+use structure::{TomlTable, TomlTablePrivate, TomlKey, TomlKeyPrivate, Scope, CreatePathError};
 use structure::{TomlValue, TomlValuePrivate, TomlArray, TomlArrayPrivate};
 use debug;
 
 /// Parses the given text as a TOML document and returns the top-level table for the document.
-pub fn parse<'a>(text: &'a str) -> Result<TomlTable<'a>, ParseError> {
+pub fn parse(text: &str) -> Result<TomlTable, ParseError> {
     let mut parser = Parser::new(text);
     parser.parse()
 }
@@ -45,6 +44,7 @@ pub enum ParseError {
     InvalidScopePath,
     /// A comma was found before any values.
     NonFinalComma { pos: usize },
+    WrongValueTypeInArray { start: usize, pos: usize },
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -99,6 +99,11 @@ impl ParseError {
                 println!("Invalid top_level item found at {}:{} :", line, col);
                 debug::show_invalid_character(text, pos);
             }
+            WrongValueTypeInArray { start, pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Value of invalid type found in array at {}:{} :", line, col);
+                debug::show_invalid_part(text, start, pos);
+            }
             _ => {
                 unimplemented!();
             }
@@ -112,18 +117,17 @@ impl From<TokenError> for ParseError {
 }
 impl From<CreatePathError> for ParseError {
     fn from(err: CreatePathError) -> ParseError {
+        let _ = err;
         ParseError::InvalidScopePath
     }
 }
 
 struct Parser<'a> {
-    text: &'a str,
     tokens: Peekable<Tokens<'a>>,
 }
 impl<'a> Parser<'a> {
     fn new(text: &'a str) -> Parser<'a> {
         Parser {
-            text: text,
             tokens: tokens::tokens(text).peekable(),
         }
     }
@@ -147,19 +151,15 @@ impl<'a> Parser<'a> {
                     }
                 }
                 SingleBracketClose if ! array => {
-                    if ! key_found {
+                    if (! key_found) || (! was_key) {
                         return Err(InvalidScope { start: start, pos: pos });
-                    } else if ! was_key {
-                        return Err(InvalidScope { start: start, pos: pos});
                     }
                     closed = true;
                     break;
                 }
                 DoubleBracketClose if array => {
-                    if ! key_found {
+                    if (! key_found) || (! was_key) {
                         return Err(InvalidScope { start: start, pos: pos });
-                    } else if ! was_key {
-                        return Err(InvalidScope { start: start, pos: pos});
                     }
                     closed = true;
                     break;
@@ -177,7 +177,7 @@ impl<'a> Parser<'a> {
                     was_key = true;
                     scope.push_key(TomlKey::from_string(text, literal, multiline));
                 }
-                other => {
+                _ => {
                     return Err(InvalidScope { start: start, pos: pos });
                 }
             }
@@ -223,7 +223,14 @@ impl<'a> Parser<'a> {
                             return Err(NonFinalComma { pos: pos });
                         }
                         let value = self.read_value(start)?;
-                        array.push(value);
+                        match array.push(value) {
+                            Ok(()) => {},
+                            Err(_) => {
+                                return Err(WrongValueTypeInArray {
+                                    start: start, pos: pos
+                                });
+                            }
+                        }
                         is_reading_value = false;
                     }
                 }
@@ -388,11 +395,11 @@ impl<'a> Parser<'a> {
     fn peek_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
         match self.tokens.peek() {
             Some(res) => {
-                match res {
-                    &Err(ref e) => {
+                match *res {
+                    Err(ref e) => {
                         Err(ParseError::from(e.clone()))
                     },
-                    &Ok(token) => Ok(token),
+                    Ok(token) => Ok(token),
                 }
             }
             None => Err(err)
@@ -403,11 +410,11 @@ impl<'a> Parser<'a> {
         use tokens::Token::*;
         use self::ParseError::*;
         while self.tokens.peek().is_some() {
-            match self.tokens.peek().unwrap() {
-                &Err(ref e) => {
+            match *self.tokens.peek().unwrap() {
+                Err(ref e) => {
                     return Err(ParseError::from(e.clone())); 
                 }
-                &Ok((_, SingleBracketOpen)) | &Ok((_, DoubleBracketOpen)) => {
+                Ok((_, SingleBracketOpen)) | Ok((_, DoubleBracketOpen)) => {
                     return Ok(());
                 }
                 _ => {}
@@ -418,7 +425,7 @@ impl<'a> Parser<'a> {
                     table.push_space(text);
                 }
                 (_, Newline(text)) => {
-                    table.push_newline(text.starts_with("\r"));
+                    table.push_newline(text.starts_with('\r'));
                 }
                 (_, Comment(text)) => {
                     table.push_comment(text);
@@ -455,7 +462,7 @@ impl<'a> Parser<'a> {
                     top_table.push_space(text);
                 }
                 (_, Newline(text)) => {
-                    top_table.push_newline(text.starts_with("\r"));
+                    top_table.push_newline(text.starts_with('\r'));
                 }
                 (pos, SingleBracketOpen) => {
                     let mut scope = Scope::new();
@@ -471,7 +478,7 @@ impl<'a> Parser<'a> {
                 }
                 (pos, DoubleBracketOpen) => {
                     let mut scope = Scope::new();
-                    let scope = self.read_scope(&mut scope, true, pos)?;
+                    self.read_scope(&mut scope, true, pos)?;
                     //let mut table = top_table.get_or_create_table(scope.path());
                     
                     //println!("Table: {:?}", table);

@@ -1,6 +1,5 @@
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
-use std::io::Write;
 use debug;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
@@ -13,7 +12,7 @@ enum LexerScope {
 }
 
 /// Returns an iterator over the TOML tokens in the given text.
-pub fn tokens<'a>(text: &'a str) -> Tokens<'a> {
+pub fn tokens(text: &str) -> Tokens {
     Tokens::new(text)
 }
 
@@ -39,15 +38,18 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    fn current_position(&self) -> (usize, usize) {
+    /// Returns the line and cloumn of the tokenizer.
+    pub fn current_position(&self) -> (usize, usize) {
         debug::get_position(self.text, self.start)
     }
     
+    /// Returns whether the remaining text starts with the given pattern.
     #[inline]
     fn next_is(&self, start: usize, pat: &str) -> bool {
         (&self.text[start..]).starts_with(pat)
     }
     
+    /// Returns whether the next chaaracter is the same as the given.
     #[inline]
     fn peek_is(&mut self, ch: char) -> bool {
         if let Some(&(_, c)) = self.chars.peek() {
@@ -57,21 +59,17 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    
+    /// Returns whether the current tokenizer scope is inside a table.
     fn scope_is_table(&self) -> bool {
         if self.scope_stack.is_empty() {
-            return false;
+            false
         } else {
             let last = self.scope_stack.len() - 1;
-            if self.scope_stack[last] == '{' {
-                true
-            } else {
-                false
-            }
+            self.scope_stack[last] == '{'
         }
     }
     
-    
+    /// Reads as many whitespace characters as possible.
     fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
@@ -80,17 +78,17 @@ impl<'a> Tokens<'a> {
                 ' ' | '\t' => {
                     self.chars.next();
                 }
-                ch => {
+                _ => {
                     let part = &self.text[self.start..i];
                     self.start = i;
                     return Ok((start, Whitespace(part)));
                 }
             }
         }
-        return Ok((start, Whitespace(&self.text[self.start..])));
+        Ok((start, Whitespace(&self.text[self.start..])))
     }
     
-    
+    /// Reads a plain key.
     fn read_key(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
@@ -99,31 +97,22 @@ impl<'a> Tokens<'a> {
                 'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {
                     self.chars.next();
                 }
-                ',' | ']' | ' ' | '\t' | '\n' | '#' => {
-                    let part = &self.text[self.start..i];
-                    self.start = i;
-                    return Ok((start, Key(part)));
-                }
-                ch => {
+                _ => {
                     let part = &self.text[self.start..i];
                     self.start = i;
                     return Ok((start, Key(part)));
                 }
             }
         }
-        return Ok((start, Key(&self.text[self.start..])));
+        Ok((start, Key(&self.text[self.start..])))
     }
     
-    
+    /// Reads a comment.
     fn read_comment(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
-            if self.next_is(i, "\r\n") {
-                let part = &self.text[self.start+1..i];
-                self.start = i;
-                return Ok((start, Comment(part)));
-            } else if ch == '\n' {
+            if self.next_is(i, "\r\n") || ch == '\n' {
                 let part = &self.text[self.start+1..i];
                 self.start = i;
                 return Ok((start, Comment(part)));
@@ -131,10 +120,10 @@ impl<'a> Tokens<'a> {
                 self.chars.next();
             }
         }
-        return Ok((start, Comment(&self.text[self.start+1..])));
+        Ok((start, Comment(&self.text[self.start+1..])))
     }
     
-    
+    /// Reads a bracket.
     fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
@@ -151,24 +140,22 @@ impl<'a> Tokens<'a> {
                 } else { 
                     return Ok((start, DoubleBracketClose));
                 }
+            } else if open {
+                //print!("Open: stack: {:?} -> ", self.scope_stack);
+                self.scope_stack.push('[');
+                //println!("{:?}", self.scope_stack);
+                return Ok((start, SingleBracketOpen));
             } else {
-                if open {
-                    //print!("Open: stack: {:?} -> ", self.scope_stack);
-                    self.scope_stack.push('[');
-                    //println!("{:?}", self.scope_stack);
-                    return Ok((start, SingleBracketOpen));
+                //print!("Close: stack: {:?} -> ", self.scope_stack);
+                if self.scope_stack.is_empty() {
+                    //println!("Error!");
+                    self.finished = true;
+                    return Err(UnmatchedClosingBrace { pos: self.start-1 });
                 } else {
-                    //print!("Close: stack: {:?} -> ", self.scope_stack);
-                    if self.scope_stack.is_empty() {
-                        //println!("Error!");
-                        self.finished = true;
-                        return Err(UnmatchedClosingBrace { pos: self.start-1 });
-                    } else {
-                        self.scope_stack.pop();
-                        //println!("{:?}", self.scope_stack);
-                    }
-                    return Ok((start, SingleBracketClose));
+                    self.scope_stack.pop();
+                    //println!("{:?}", self.scope_stack);
                 }
+                return Ok((start, SingleBracketClose));
             }
         } else {
             if open {
@@ -188,7 +175,7 @@ impl<'a> Tokens<'a> {
         }
     }
     
-    
+    /// Reads a string.
     fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
@@ -202,14 +189,12 @@ impl<'a> Tokens<'a> {
             } else {
                 false
             }
+        } else if self.next_is(self.start + 1, "''") {
+            self.chars.next();
+            self.chars.next();
+            true
         } else {
-            if self.next_is(self.start + 1, "''") {
-                self.chars.next();
-                self.chars.next();
-                true
-            } else {
-                false
-            }
+            false
         };
         if literal {
             while let Some((i, ch)) = self.chars.next() {
@@ -258,13 +243,13 @@ impl<'a> Tokens<'a> {
                         }
                         'u' => {
                             println!("Should validate x4 unicode");
-                            for i in 0..4 {
+                            for _ in 0..4 {
                                 self.chars.next();
                             }
                         } 
                         'U' => {
                             println!("Should validate x8 unicode");
-                            for i in 0..8 {
+                            for _ in 0..8 {
                                 self.chars.next();
                             }
                         }
@@ -283,7 +268,6 @@ impl<'a> Tokens<'a> {
     // TODO: Don't do this as brokenly
     fn read_datetime(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
-        use self::TokenError::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -302,7 +286,7 @@ impl<'a> Tokens<'a> {
         Ok((start, DateTime(part)))
     }
     
-    
+    /// Reads an integer.
     fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
             -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -344,7 +328,7 @@ impl<'a> Tokens<'a> {
                     self.start = i;
                     return Ok((start, Int(part)));
                 }
-                ch => {
+                _ => {
                     return Err(InvalidIntCharacter {
                         start: self.start, pos: i
                     });
@@ -355,6 +339,7 @@ impl<'a> Tokens<'a> {
         Ok((start, Int(part)))
     }
     
+    /// Reads a floating point number.
     fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
             -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -392,7 +377,7 @@ impl<'a> Tokens<'a> {
                     self.start = i;
                     return Ok((start, Float(part)));
                 }
-                ch => {
+                _ => {
                     return Err(InvalidFloatCharacter {
                         start: self.start, pos: i
                     });
@@ -403,6 +388,7 @@ impl<'a> Tokens<'a> {
         Ok((start, Float(part)))
     }
     
+    /// Reads a value. (right hand of an assignment or part of an array).
     fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
@@ -411,7 +397,7 @@ impl<'a> Tokens<'a> {
         match ch {
             't' => {
                 if self.next_is(i, "true") {
-                    for i in 0..3 {
+                    for _ in 0..3 {
                         self.chars.next();
                     }
                     self.start = i + 4;
@@ -424,7 +410,7 @@ impl<'a> Tokens<'a> {
             }
             'f' => {
                 if self.next_is(i, "false") {
-                    for i in 0..4 {
+                    for _ in 0..4 {
                         self.chars.next();
                     }
                     self.start = i + 5;
@@ -441,7 +427,7 @@ impl<'a> Tokens<'a> {
             '0' ... '9' => {
                 self.read_int(true, true)
             }
-            ch => {
+            _ => {
                 self.finished = true;
                 Err(InvalidValueCharacter {
                     start: self.start, pos: i
@@ -693,7 +679,7 @@ impl<'a> Iterator for Tokens<'a> {
                                 '_' | '-' => {
                                     return Some(self.read_key())
                                 }
-                                ch => {
+                                _ => {
                                     return Some(Err(InvalidKeyCharacter {
                                         pos: i
                                     }));

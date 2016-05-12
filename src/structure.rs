@@ -1,9 +1,6 @@
 //! Data types created by the parser and given to the client.
-use std::fmt::Debug;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::borrow::{Cow, Borrow};
-use std::char;
 use std::hash;
 
 /// A TOML string value.
@@ -42,7 +39,7 @@ pub enum TomlFloat<'a> {
 }
 
 /// A TOML integer value.
-/// 3 32_000.
+/// `3` `32_000`.
 #[derive(Debug)]
 pub enum TomlInt<'a> {
     Text(&'a str),
@@ -107,7 +104,7 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             chars.next();
         }
     }
-    while let Some((i, ch)) = chars.next() {
+    while let Some((_, ch)) = chars.next() {
         if escaped {
             match ch {
                 ch if ch.is_whitespace() => {
@@ -138,13 +135,13 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     escaped = false;
                 }
                 'u' => {
-                    for i in 0..4 {
+                    for _ in 0..4 {
                         chars.next();
                     }
                     escaped = false;
                 }
                 'U' => {
-                    for i in 0..8 {
+                    for _ in 0..8 {
                         chars.next();
                     }
                     escaped = false;
@@ -216,7 +213,7 @@ impl<'a> Scope<'a> {
     pub fn write(&self, out: &mut String) {
         use self::ScopeItem::*;
         out.push('[');
-        for item in self.ordering.iter() {
+        for item in &self.ordering {
             match *item {
                 Dot => out.push('.'),
                 Space(text) => out.push_str(text),
@@ -246,7 +243,7 @@ pub struct TomlArray<'a> {
     order: Vec<ArrayItem<'a>>,
 }
 
-/// A protected interface for the TomlArray.
+/// A protected interface for the `TomlArray`.
 pub trait TomlArrayPrivate<'a> {
     fn push(&mut self, value: TomlValue<'a>) -> Result<(), String>;
     fn push_space(&mut self, space: &'a str);
@@ -308,7 +305,7 @@ impl<'a> TomlArray<'a> {
     pub fn write(&self, out: &mut String) {
         use self::ArrayItem::*;
         out.push('[');
-        for item in self.order.iter() {
+        for item in &self.order {
             match *item {
                 Space(text) => out.push_str(text),
                 Comment(text) => {
@@ -355,7 +352,7 @@ fn write_string(text: &str, literal: bool, multiline: bool, out: &mut String) {
     }
 }
 
-/// A protected interface for TomlValue.
+/// A protected interface for `TomlValue`.
 pub trait TomlValuePrivate<'a> {
     fn int(text: &'a str) -> TomlValue<'a>;
     fn bool(value: bool) -> TomlValue<'a>;
@@ -435,8 +432,8 @@ impl<'a> From<&'a str> for TomlValue<'a> {
 }
 
 /// A TOML key. Used for both scope path elements, and for identifying table entries.
-/// key = "something"
-/// [ key. other_key . third-key ]
+/// `key = "something"`
+/// `[ key. other_key . third-key ]`
 #[derive(Debug, Eq, Clone, Copy)]
 pub enum TomlKey<'a> {
     Plain(&'a str),
@@ -444,7 +441,7 @@ pub enum TomlKey<'a> {
     User(&'a str),
 }
 
-/// Protected interface for the TomlKey.
+/// Protected interface for the `TomlKey`.
 pub trait TomlKeyPrivate<'a> {
     fn from_key(key: &'a str) -> TomlKey<'a>;
     fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a>;
@@ -546,7 +543,7 @@ pub struct TomlTable<'a> {
     inline: bool,
     order: Vec<TableItem<'a>>,
     items: HashMap<TomlKey<'a>, TomlValue<'a>>,
-    subtables: Vec<(Scope<'a>)>, // Only used in the top-level table
+    visual_scopes: Vec<Scope<'a>>,
 }
 
 /// A protected interface for a the TOML table.
@@ -588,7 +585,7 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
     /// Pushes a table / table-array scope to the format order.
     /// Note: Only for the top-level table.
     fn push_scope(&mut self, scope: Scope<'a>) {
-        self.subtables.push(scope);
+        self.visual_scopes.push(scope);
     }
     
     /// Inserts the given key as an entry to the table with the given sapce.
@@ -596,7 +593,7 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
             before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
         let key = key.into();
         let entry = TableItem::Entry { 
-            key: key.clone(), before_eq: before_eq.unwrap_or(""), 
+            key: key, before_eq: before_eq.unwrap_or(""), 
             after_eq: after_eq.unwrap_or("")
         };
         self.order.push(entry);
@@ -611,7 +608,7 @@ impl<'a> TomlTable<'a> {
             inline: inline,
             order: Vec::new(),
             items: HashMap::new(),
-            subtables: Vec::new(),
+            visual_scopes: Vec::new(),
         }
     }
     
@@ -626,8 +623,9 @@ impl<'a> TomlTable<'a> {
             }
             Some(first) => {
                 let first = first.into();
-                match self.items.entry(first).or_insert(TomlValue::Table(TomlTable::new(false))) {
-                    &mut TomlValue::Table(ref mut table) => {
+                match *self.items.entry(first).or_insert_with(
+                        || TomlValue::Table(TomlTable::new(false))) {
+                    TomlValue::Table(ref mut table) => {
                         table.get_or_create_table(iter)
                     }
                     _ => {
@@ -646,10 +644,10 @@ impl<'a> TomlTable<'a> {
         } else if path.len() == 1 {
             self.items.get(&path[0])
         } else {
-            let ref first = path[0];
+            let first = &path[0];
             let rest = &path[1..];
 
-            match self.items.get(&first) {
+            match self.items.get(first) {
                 Some(&TomlValue::Table(ref table)) => {
                     table.find_value(rest)
                 }
@@ -693,14 +691,12 @@ impl<'a> TomlTable<'a> {
     /// Returns the last indentation of a key/value pair in the table.
     fn last_indent(&mut self) -> &'a str {
         use self::TableItem::*;
-        let mut entry_found = false;
         let mut last_was_entry = false;
         let mut after_newline = false;
         let mut first_space = None;
         for item in self.order.iter().rev() {
             match *item {
                 Entry { .. } => {
-                    entry_found = true;
                     last_was_entry = true;
                 }
                 Space(text) => {
@@ -757,9 +753,8 @@ impl<'a> TomlTable<'a> {
             self.items.insert(key, value);
         } else {
             if ! self.inline {
-                let indent = self.last_indent();
                 let entry = Entry { 
-                    key: key.clone(), before_eq: " ", 
+                    key: key, before_eq: " ", 
                     after_eq: " "
                 };
                 self.items.insert(key, value);
@@ -796,7 +791,7 @@ impl<'a> TomlTable<'a> {
         if self.inline {
             out.push('{');
         }
-        for item in self.order.iter() {
+        for item in &self.order {
             match *item {
                 Space(text) | Newline(text) => out.push_str(text),
                 Comment(text) => {
@@ -816,7 +811,7 @@ impl<'a> TomlTable<'a> {
         if self.inline {
             out.push('}');
         }
-        for scope in self.subtables.iter() {
+        for scope in &self.visual_scopes {
             scope.write(out);
             self.find_value(scope.path()).unwrap().write(out);
         }

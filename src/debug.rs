@@ -42,7 +42,6 @@ pub fn show_invalid_character(text: &str, pos: usize) {
     let line_text = text.lines().skip(line-1).next().unwrap();
     println!("{}", line_text);
     let mut pre = String::new();
-    let line_len = line_text.chars().count();
     for _ in 0 .. col-1 {
         pre.push(' ');
     }
