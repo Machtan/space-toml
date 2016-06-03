@@ -402,13 +402,13 @@ impl<'a> Parser<'a> {
         use tokens::Token::*;
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
-            (_, Int(text)) => Ok(TomlValue::int(text)),
-            (_, Float(text)) => Ok(TomlValue::float(text)),
+            (_, Int(text)) => Ok(TomlValue::new_int(text)),
+            (_, Float(text)) => Ok(TomlValue::new_float(text)),
             (_, String { text, literal, multiline }) => {
-                Ok(TomlValue::string(text, literal, multiline))
+                Ok(TomlValue::new_string(text, literal, multiline))
             }
-            (_, Bool(value)) => Ok(TomlValue::bool(value)),
-            (_, DateTime(text)) => Ok(TomlValue::datetime(text)),
+            (_, Bool(value)) => Ok(TomlValue::new_bool(value)),
+            (_, DateTime(text)) => Ok(TomlValue::new_datetime(text)),
             (pos, SingleBracketOpen) => Ok(self.read_array(pos)?),
             (pos, CurlyOpen) => {
                 let mut table = TomlTable::new_inline();
