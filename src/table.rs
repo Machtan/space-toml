@@ -121,10 +121,10 @@ impl<'a> TomlTable<'a> {
         TomlTable::new(true)
     }
 
-    fn get_or_insert_with_slice<F, T>(&mut self,
-                                      path: &[TomlKey<'a>],
-                                      default: F)
-                                      -> Result<&mut TomlValue<'a>, CreatePathError>
+    fn find_or_insert_with_slice<F, T>(&mut self,
+                                       path: &[TomlKey<'a>],
+                                       default: F)
+                                       -> Result<&mut TomlValue<'a>, CreatePathError>
         where F: FnOnce() -> T,
               T: Into<TomlValue<'a>>
     {
@@ -135,7 +135,7 @@ impl<'a> TomlTable<'a> {
                     .entry(key)
                     .or_insert_with(|| TomlValue::Table(TomlTable::new(false))) {
                     TomlValue::Table(ref mut table) => {
-                        table.get_or_insert_with_slice(&path[1..], default)
+                        table.find_or_insert_with_slice(&path[1..], default)
                     }
                     _ => Err(CreatePathError::InvalidScopeTable),
                 }
@@ -148,10 +148,10 @@ impl<'a> TomlTable<'a> {
 
     // TODO: Better errors
     /// Returns the table at the given path, potentially creating tables at all the path links.
-    pub fn get_or_insert_with<I, P, F, T>(&mut self,
-                                          path: P,
-                                          default: F)
-                                          -> Result<&mut TomlValue<'a>, CreatePathError>
+    pub fn find_or_insert_with<I, P, F, T>(&mut self,
+                                           path: P,
+                                           default: F)
+                                           -> Result<&mut TomlValue<'a>, CreatePathError>
         where P: IntoIterator<Item = I>,
               I: Into<TomlKey<'a>>,
               F: FnOnce() -> T,
@@ -161,12 +161,12 @@ impl<'a> TomlTable<'a> {
         if path.is_empty() {
             return Err(CreatePathError::InvalidScopeTable);
         }
-        self.get_or_insert_with_slice(&path, default)
+        self.find_or_insert_with_slice(&path, default)
     }
 
-    pub fn get_or_insert_table<I, P>(&mut self,
-                                     path: P)
-                                     -> Result<&mut TomlTable<'a>, CreatePathError>
+    pub fn find_or_insert_table<I, P>(&mut self,
+                                      path: P)
+                                      -> Result<&mut TomlTable<'a>, CreatePathError>
         where P: IntoIterator<Item = I>,
               I: Into<TomlKey<'a>>
     {
@@ -175,7 +175,7 @@ impl<'a> TomlTable<'a> {
             return Err(CreatePathError::InvalidScopeTable);
         }
         let value =
-            self.get_or_insert_with_slice(&path, || TomlValue::Table(TomlTable::new(false)))?;
+            self.find_or_insert_with_slice(&path, || TomlValue::Table(TomlTable::new(false)))?;
         match *value {
             TomlValue::Table(ref mut table) => Ok(table),
             _ => unreachable!(),
@@ -183,7 +183,7 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Attempts to find a value at the given path in the table.
-    pub fn find_value(&self, path: &[TomlKey<'a>]) -> Option<&TomlValue<'a>> {
+    pub fn find(&self, path: &[TomlKey<'a>]) -> Option<&TomlValue<'a>> {
         if path.is_empty() {
             None
         } else if path.len() == 1 {
@@ -193,7 +193,28 @@ impl<'a> TomlTable<'a> {
             let rest = &path[1..];
 
             match self.items.get(first) {
-                Some(&TomlValue::Table(ref table)) => table.find_value(rest),
+                Some(&TomlValue::Table(ref table)) => table.find(rest),
+                Some(_) => {
+                    // TODO: Return an error here
+                    None
+                }
+                None => None,
+            }
+        }
+    }
+
+    /// Attempts to find a value at the given path in the table.
+    pub fn find_mut(&mut self, path: &[TomlKey<'a>]) -> Option<&mut TomlValue<'a>> {
+        if path.is_empty() {
+            None
+        } else if path.len() == 1 {
+            self.items.get_mut(&path[0])
+        } else {
+            let first = &path[0];
+            let rest = &path[1..];
+
+            match self.items.get_mut(first) {
+                Some(&mut TomlValue::Table(ref mut table)) => table.find_mut(rest),
                 Some(_) => {
                     // TODO: Return an error here
                     None
@@ -204,7 +225,7 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Unimplemented.
-    pub fn get_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
+    pub fn find_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
         if path.is_empty() {
             self
         } else {
@@ -360,7 +381,7 @@ impl<'a> TomlTable<'a> {
         }
         for scope in &self.visual_scopes {
             scope.write(out);
-            self.find_value(scope.path()).unwrap().write(out);
+            self.find(scope.path()).unwrap().write(out);
         }
     }
 }

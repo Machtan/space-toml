@@ -551,8 +551,8 @@ impl<'a> Parser<'a> {
                     // TODO: Validate that the scope hasn't been used before
                     {
                         let mut table = if let TomlValue::Table(ref mut table) =
-                                               *top_table.get_or_insert_with(scope.path(),
-                                                || TomlValue::Table(TomlTable::new_regular()))? {
+                                               *top_table.find_or_insert_with(scope.path(),
+                                                 || TomlValue::Table(TomlTable::new_regular()))? {
                             table
                         } else {
                             // TODO: improve this error
@@ -566,7 +566,7 @@ impl<'a> Parser<'a> {
                 (pos, DoubleBracketOpen) => {
                     let mut scope = Scope::new();
                     self.read_scope(&mut scope, true, pos)?;
-                    // let mut table = top_table.get_or_create_table(scope.path());
+                    // let mut table = top_table.find_or_create_table(scope.path());
 
                     // println!("Table: {:?}", table);
                 }
