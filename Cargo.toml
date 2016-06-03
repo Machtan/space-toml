@@ -3,8 +3,4 @@ authors = ["Machtan <jako3047@gmail.com>"]
 name = "space-toml"
 version = "0.1.0"
 
-[[bin]]
-name = "spacetoml"
-doc = false
-
 [dependencies]

@@ -1,10 +1,18 @@
 #![feature(question_mark)]
+#![feature(slice_patterns)]
 
 mod debug;
+mod utils;
 mod tokens;
-mod structure;
 mod parse;
+mod key;
+mod scope;
+mod table;
+mod array;
+mod value;
 
-pub use tokens::{tokens, Token, TokenError};
-pub use structure::{TomlTable, TomlArray, TomlValue, CreatePathError};
+pub use tokens::{tokens, Tokens, Token, TokenError};
+pub use table::{CreatePathError, TomlTable};
+pub use array::TomlArray;
+pub use value::TomlValue;
 pub use parse::{parse, ParseError};

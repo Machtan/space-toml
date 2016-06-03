@@ -2,8 +2,11 @@
 use std::iter::{Iterator, Peekable};
 
 use tokens::{self, TokenError, Token, Tokens};
-use structure::{TomlTable, TomlTablePrivate, TomlKey, TomlKeyPrivate, Scope, CreatePathError};
-use structure::{TomlValue, TomlValuePrivate, TomlArray, TomlArrayPrivate};
+use key::{TomlKey, TomlKeyPrivate};
+use table::{TomlTable, TomlTablePrivate, CreatePathError};
+use scope::Scope;
+use array::{TomlArray, TomlArrayPrivate};
+use value::{TomlValue, TomlValuePrivate};
 use debug;
 
 /// Parses the given text as a TOML document and returns the top-level table for the document.
@@ -470,7 +473,15 @@ impl<'a> Parser<'a> {
                     
                     // TODO: Validate that the scope hasn't been used before
                     {
-                        let mut table = top_table.get_or_create_table(scope.path())?;
+                        let mut table = if let TomlValue::Table(ref mut table) = 
+                            *top_table.get_or_insert_with(scope.path(),
+                                || TomlValue::Table(TomlTable::new(false))
+                        )? {
+                            table
+                        } else {
+                            // TODO: improve this error
+                            return Err(InvalidScopePath);
+                        };
                         self.read_table(&mut table)?;
                     }
                     top_table.push_scope(scope);
