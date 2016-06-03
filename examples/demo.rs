@@ -3,6 +3,8 @@ extern crate space_toml;
 use std::io::Read;
 use std::fs::File;
 
+use space_toml::{TomlTable};
+
 fn test_lexer(text: &str, verbose: bool) {
     let mut out = String::new();
     let mut tokens = space_toml::tokens(text);
@@ -71,7 +73,7 @@ fn main() {
             println!("{}", out);
             assert_eq!(simple, &out);
             println!("Parsed table written and validated!");
-            table.get_or_insert_with(&["hello"], || )
+            table.get_or_insert_with(&["hello"], || TomlTable::new_regular())
                 .expect("Could not find table 'hello'")
                 .insert("test", "value");
             table.get_or_create_table(&["bob", "something"])

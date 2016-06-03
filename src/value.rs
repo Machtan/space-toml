@@ -1,16 +1,20 @@
 
+use std::borrow::{Borrow, Cow};
 use table::TomlTable;
 use array::TomlArray;
 use utils::{write_string, escape_string};
 
 /// A TOML string value.
-/// "Normal\nwith escapes" 'Literal' 
+/// "Normal\nwith escapes" 'Literal'
 /// """multi-line normal""" '''multi-line literal'''
 #[derive(Debug, Clone)]
 pub enum TomlString<'a> {
-    Text { text: &'a str, literal: bool, multiline: bool },
-    User(&'a str),
-    
+    Text {
+        text: &'a str,
+        literal: bool,
+        multiline: bool,
+    },
+    User(Cow<'a, str>),
 }
 impl<'a> TomlString<'a> {
     /// Creates a new TOML string from the values of the tokens given by the lexer.
@@ -21,12 +25,12 @@ impl<'a> TomlString<'a> {
             multiline: multiline,
         }
     }
-    
+
     /// Creates a new TOML string from a user string.
     /// This means that the string is formatted differently when written
     /// (it has no 'set' format like the other string variant).
-    fn from_user(text: &'a str) -> TomlString<'a> {
-        TomlString::User(text)
+    fn from_user<T: Into<Cow<'a, str>>>(text: T) -> TomlString<'a> {
+        TomlString::User(text.into())
     }
 }
 
@@ -57,7 +61,7 @@ pub enum TomlValue<'a> {
     /// This is not validated and just given as a string. Use at your own risk.
     DateTime(&'a str),
     Table(TomlTable<'a>),
-    Array(TomlArray<'a>)
+    Array(TomlArray<'a>),
 }
 
 /// A protected interface for `TomlValue`.
@@ -74,22 +78,22 @@ impl<'a> TomlValuePrivate<'a> for TomlValue<'a> {
     fn int(text: &'a str) -> TomlValue<'a> {
         TomlValue::Int(TomlInt::Text(text))
     }
-    
+
     /// Wraps a new bool.
     fn bool(value: bool) -> TomlValue<'a> {
         TomlValue::Bool(value)
     }
-    
+
     /// Wraps a new string.
     fn string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a> {
         TomlValue::String(TomlString::new(text, literal, multiline))
     }
-    
+
     /// Wraps a new float.
     fn float(text: &'a str) -> TomlValue<'a> {
         TomlValue::Float(TomlFloat::Text(text))
     }
-    
+
     /// Wraps a new datetime.
     fn datetime(text: &'a str) -> TomlValue<'a> {
         TomlValue::DateTime(text)
@@ -107,21 +111,27 @@ impl<'a> TomlValue<'a> {
             (&Float(_), &Float(_)) => true,
             (&Table(_), &Table(_)) => true,
             (&Array(_), &Array(_)) => true,
-            _ => false
+            _ => false,
         }
     }
-    
+
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TomlValue::*;
         match *self {
-            String(TomlString::Text { text, literal, multiline}) => {
+            String(TomlString::Text { text, literal, multiline }) => {
                 write_string(text, literal, multiline, out);
-            },
-            String(TomlString::User(text)) => {
-                out.push_str(&escape_string(text));
             }
-            Bool(b) => out.push_str(if b {"true"} else {"false"}),
+            String(TomlString::User(ref text)) => {
+                out.push_str(&escape_string(text.borrow()));
+            }
+            Bool(b) => {
+                out.push_str(if b {
+                    "true"
+                } else {
+                    "false"
+                })
+            }
             Int(TomlInt::Text(text)) => out.push_str(text),
             DateTime(text) => out.push_str(text),
             Int(TomlInt::Value(v)) => out.push_str(&format!("{}", v)),
@@ -136,5 +146,53 @@ impl<'a> TomlValue<'a> {
 impl<'a> From<&'a str> for TomlValue<'a> {
     fn from(other: &'a str) -> TomlValue<'a> {
         TomlValue::String(TomlString::from_user(other))
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for TomlValue<'a> {
+    fn from(other: Cow<'a, str>) -> TomlValue<'a> {
+        TomlValue::String(TomlString::from_user(other))
+    }
+}
+
+impl<'a> From<String> for TomlValue<'a> {
+    fn from(other: String) -> TomlValue<'a> {
+        TomlValue::String(TomlString::from_user(other))
+    }
+}
+
+impl<'a> From<TomlTable<'a>> for TomlValue<'a> {
+    fn from(other: TomlTable<'a>) -> TomlValue<'a> {
+        TomlValue::Table(other)
+    }
+}
+
+impl<'a> From<i64> for TomlValue<'a> {
+    fn from(other: i64) -> TomlValue<'a> {
+        TomlValue::Int(TomlInt::Value(other))
+    }
+}
+
+impl<'a> From<i32> for TomlValue<'a> {
+    fn from(other: i32) -> TomlValue<'a> {
+        TomlValue::Int(TomlInt::Value(other as i64))
+    }
+}
+
+impl<'a> From<f32> for TomlValue<'a> {
+    fn from(other: f32) -> TomlValue<'a> {
+        TomlValue::Float(TomlFloat::Value(other as f64))
+    }
+}
+
+impl<'a> From<f64> for TomlValue<'a> {
+    fn from(other: f64) -> TomlValue<'a> {
+        TomlValue::Float(TomlFloat::Value(other))
+    }
+}
+
+impl<'a> From<TomlArray<'a>> for TomlValue<'a> {
+    fn from(other: TomlArray<'a>) -> TomlValue<'a> {
+        TomlValue::Array(other)
     }
 }

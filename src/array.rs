@@ -27,29 +27,32 @@ pub trait TomlArrayPrivate<'a> {
 }
 
 impl<'a> TomlArrayPrivate<'a> for TomlArray<'a> {
-    /// Pushes a new value to the array. 
+    /// Pushes a new value to the array.
     /// Errors if the value is of a different type than the first element of the array.
     fn push(&mut self, value: TomlValue<'a>) -> Result<(), String> {
         if let Some(first) = self.items.get(0) {
-            if ! first.is_same_type(&value) {
-                return Err(format!("Attempted to insert a value of type {:?} into an array of type {:?}", value, first));
+            if !first.is_same_type(&value) {
+                return Err(format!("Attempted to insert a value of type {:?} into an array of \
+                                    type {:?}",
+                                   value,
+                                   first));
             }
         }
         self.order.push(ArrayItem::Item);
         self.items.push(value);
         Ok(())
     }
-    
+
     /// Pushes an amount of whitespace to the array format order.
     fn push_space(&mut self, space: &'a str) {
         self.order.push(ArrayItem::Space(space));
     }
-    
+
     /// Pushes a comma to the array format order.
     fn push_comma(&mut self) {
         self.order.push(ArrayItem::Comma);
     }
-    
+
     /// Pushes a comment and a newline (CR currently NOT handled) to the array format order.
     fn push_comment(&mut self, comment: &'a str) {
         self.order.push(ArrayItem::Comment(comment));
@@ -65,17 +68,17 @@ impl<'a> TomlArray<'a> {
             order: Vec::new(),
         }
     }
-    
+
     /// Returns the items of this array.
     pub fn items(&self) -> &Vec<TomlValue<'a>> {
         &self.items
     }
-    
+
     /// Returns whether this array is empty of values (it might still contain formatting info).
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
-    
+
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::ArrayItem::*;

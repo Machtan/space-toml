@@ -9,7 +9,11 @@ use utils::{write_string, create_key, clean_string};
 #[derive(Debug, Eq, Clone, Copy)]
 pub enum TomlKey<'a> {
     Plain(&'a str),
-    String { text: &'a str, literal: bool, multiline: bool },
+    String {
+        text: &'a str,
+        literal: bool,
+        multiline: bool,
+    },
     User(&'a str),
 }
 
@@ -24,10 +28,14 @@ impl<'a> TomlKeyPrivate<'a> for TomlKey<'a> {
     fn from_key(key: &'a str) -> TomlKey<'a> {
         TomlKey::Plain(key)
     }
-    
+
     /// Wraps a TOML string as a key.
     fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a> {
-        TomlKey::String { text: text, literal: literal, multiline: multiline }
+        TomlKey::String {
+            text: text,
+            literal: literal,
+            multiline: multiline,
+        }
     }
 }
 
@@ -45,7 +53,7 @@ impl<'a> TomlKey<'a> {
             }
         }
     }
-    
+
     /// Returns the key encoded as a Rust string.
     pub fn normalized(&self) -> Cow<'a, str> {
         use self::TomlKey::*;
@@ -60,14 +68,16 @@ impl<'a> PartialEq for TomlKey<'a> {
     fn eq(&self, other: &TomlKey<'a>) -> bool {
         self.normalized() == other.normalized()
     }
-    
+
     fn ne(&self, other: &TomlKey<'a>) -> bool {
         self.normalized() != other.normalized()
     }
 }
 
 impl<'a> hash::Hash for TomlKey<'a> {
-    fn hash<H>(&self, state: &mut H) where H: hash::Hasher {
+    fn hash<H>(&self, state: &mut H)
+        where H: hash::Hasher
+    {
         self.normalized().hash(state);
     }
 }

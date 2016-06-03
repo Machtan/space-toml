@@ -10,7 +10,11 @@ enum TableItem<'a> {
     Space(&'a str),
     Newline(&'a str),
     Comment(&'a str),
-    Entry { key: TomlKey<'a>, before_eq: &'a str, after_eq: &'a str, },
+    Entry {
+        key: TomlKey<'a>,
+        before_eq: &'a str,
+        after_eq: &'a str,
+    },
     /// For inline tables
     Comma,
 }
@@ -19,7 +23,7 @@ enum TableItem<'a> {
 #[derive(Debug)]
 pub enum CreatePathError {
     // TODO: Add data
-    InvalidScopeTable
+    InvalidScopeTable,
 }
 
 /// A TOML table.
@@ -38,9 +42,11 @@ pub trait TomlTablePrivate<'a> {
     fn push_newline(&mut self, cr: bool);
     fn push_comment(&mut self, comment: &'a str);
     fn push_scope(&mut self, scope: Scope<'a>);
-    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
-            before_eq: Option<&'a str>, after_eq: Option<&'a str>);
-    
+    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self,
+                                           key: K,
+                                           value: TomlValue<'a>,
+                                           before_eq: Option<&'a str>,
+                                           after_eq: Option<&'a str>);
 }
 
 impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
@@ -48,38 +54,46 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
     fn push_space(&mut self, space: &'a str) {
         self.order.push(TableItem::Space(space));
     }
-    
+
     /// Pushes a comma to the format order.
     /// Note: Only for inline tables.
     fn push_comma(&mut self) {
         self.order.push(TableItem::Comma);
     }
-    
+
     /// Pushes a newline to the format order.
     /// Note: Only for regular tables.
     fn push_newline(&mut self, cr: bool) {
-        self.order.push(TableItem::Newline(if cr { "\r\n" } else { "\n" }));
+        self.order.push(TableItem::Newline(if cr {
+            "\r\n"
+        } else {
+            "\n"
+        }));
     }
-    
+
     /// Pushes a comment to the format order.
     /// Note: Only for regular tables.
     fn push_comment(&mut self, comment: &'a str) {
         self.order.push(TableItem::Comment(comment));
     }
-    
+
     /// Pushes a table / table-array scope to the format order.
     /// Note: Only for the top-level table.
     fn push_scope(&mut self, scope: Scope<'a>) {
         self.visual_scopes.push(scope);
     }
-    
+
     /// Inserts the given key as an entry to the table with the given sapce.
-    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self, key: K, value: TomlValue<'a>, 
-            before_eq: Option<&'a str>, after_eq: Option<&'a str>) {
+    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self,
+                                           key: K,
+                                           value: TomlValue<'a>,
+                                           before_eq: Option<&'a str>,
+                                           after_eq: Option<&'a str>) {
         let key = key.into();
-        let entry = TableItem::Entry { 
-            key: key, before_eq: before_eq.unwrap_or(""), 
-            after_eq: after_eq.unwrap_or("")
+        let entry = TableItem::Entry {
+            key: key,
+            before_eq: before_eq.unwrap_or(""),
+            after_eq: after_eq.unwrap_or(""),
         };
         self.order.push(entry);
         self.items.insert(key, value);
@@ -88,7 +102,7 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
 
 impl<'a> TomlTable<'a> {
     /// Creates a new table.
-    pub fn new(inline: bool) -> TomlTable<'a> {
+    fn new(inline: bool) -> TomlTable<'a> {
         TomlTable {
             inline: inline,
             order: Vec::new(),
@@ -96,24 +110,34 @@ impl<'a> TomlTable<'a> {
             visual_scopes: Vec::new(),
         }
     }
-    
-    fn get_or_insert_with_slice<F>(&mut self, path: &[TomlKey<'a>], default: F)
-            -> Result<&mut TomlValue<'a>, CreatePathError> 
-            where F: FnOnce() -> TomlValue<'a> {
+
+    /// Creates a new regular TOML table.
+    pub fn new_regular() -> TomlTable<'a> {
+        TomlTable::new(false)
+    }
+
+    /// Creates a new inline TOML table.
+    pub fn new_inline() -> TomlTable<'a> {
+        TomlTable::new(true)
+    }
+
+    fn get_or_insert_with_slice<F, T>(&mut self,
+                                      path: &[TomlKey<'a>],
+                                      default: F)
+                                      -> Result<&mut TomlValue<'a>, CreatePathError>
+        where F: FnOnce() -> T,
+              T: Into<TomlValue<'a>>
+    {
         match path {
-            [key] => {
-                Ok(self.items.entry(key).or_insert_with(|| default().into()))
-            }
-            [key, ..] => {
-                match *self.items.entry(key).or_insert_with(|| {
-                    TomlValue::Table(TomlTable::new(false))
-                }){
+            [key] => Ok(self.items.entry(key).or_insert_with(|| default().into())),
+            [key, _..] => {
+                match *self.items
+                    .entry(key)
+                    .or_insert_with(|| TomlValue::Table(TomlTable::new(false))) {
                     TomlValue::Table(ref mut table) => {
                         table.get_or_insert_with_slice(&path[1..], default)
                     }
-                    _ => {
-                        Err(CreatePathError::InvalidScopeTable)
-                    }
+                    _ => Err(CreatePathError::InvalidScopeTable),
                 }
             }
             [] => {
@@ -121,41 +145,45 @@ impl<'a> TomlTable<'a> {
             }
         }
     }
-    
+
     // TODO: Better errors
     /// Returns the table at the given path, potentially creating tables at all the path links.
-    pub fn get_or_insert_with<I, P, F>(&mut self, path: P, default: F)
-            -> Result<&mut TomlValue<'a>, CreatePathError> 
-            where P: IntoIterator<Item=I>, I: Into<TomlKey<'a>>, 
-                F: FnOnce() -> TomlValue<'a> {
+    pub fn get_or_insert_with<I, P, F, T>(&mut self,
+                                          path: P,
+                                          default: F)
+                                          -> Result<&mut TomlValue<'a>, CreatePathError>
+        where P: IntoIterator<Item = I>,
+              I: Into<TomlKey<'a>>,
+              F: FnOnce() -> T,
+              T: Into<TomlValue<'a>>
+    {
         let path: Vec<TomlKey<'a>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::InvalidScopeTable);
         }
         self.get_or_insert_with_slice(&path, default)
     }
-    
-    pub fn get_or_insert_table<I, P>(&mut self, path: P)
-            -> Result<&mut TomlTable<'a>, CreatePathError> 
-            where P: IntoIterator<Item=I>, I: Into<TomlKey<'a>> {
+
+    pub fn get_or_insert_table<I, P>(&mut self,
+                                     path: P)
+                                     -> Result<&mut TomlTable<'a>, CreatePathError>
+        where P: IntoIterator<Item = I>,
+              I: Into<TomlKey<'a>>
+    {
         let path: Vec<TomlKey<'a>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::InvalidScopeTable);
         }
-        let value = self.get_or_insert_with_slice(&path, || {
-            TomlValue::Table(TomlTable::new(false))
-        })?;
+        let value =
+            self.get_or_insert_with_slice(&path, || TomlValue::Table(TomlTable::new(false)))?;
         match *value {
-            TomlValue::Table(ref mut table) => {
-                Ok(table)
-            }
+            TomlValue::Table(ref mut table) => Ok(table),
             _ => unreachable!(),
         }
     }
-    
+
     /// Attempts to find a value at the given path in the table.
-    pub fn find_value(&self, path: &[TomlKey<'a>])
-            -> Option<&TomlValue<'a>> {
+    pub fn find_value(&self, path: &[TomlKey<'a>]) -> Option<&TomlValue<'a>> {
         if path.is_empty() {
             None
         } else if path.len() == 1 {
@@ -165,9 +193,7 @@ impl<'a> TomlTable<'a> {
             let rest = &path[1..];
 
             match self.items.get(first) {
-                Some(&TomlValue::Table(ref table)) => {
-                    table.find_value(rest)
-                }
+                Some(&TomlValue::Table(ref table)) => table.find_value(rest),
                 Some(_) => {
                     // TODO: Return an error here
                     None
@@ -176,7 +202,7 @@ impl<'a> TomlTable<'a> {
             }
         }
     }
-    
+
     /// Unimplemented.
     pub fn get_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
         if path.is_empty() {
@@ -185,18 +211,18 @@ impl<'a> TomlTable<'a> {
             unimplemented!();
         }
     }
-    
+
     /// Returns whether the table is empty. The table might still contain format items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
-    
+
     /// Returns whether the inline table has a trailing comma.
     fn has_trailing_comma(&self) -> bool {
         use self::TableItem::*;
         for item in self.order.iter().rev() {
             match *item {
-                Space(_) | Comment(_) | Newline(_) => {},
+                Space(_) | Comment(_) | Newline(_) => {}
                 Entry { .. } => return false,
                 /// For inline tables
                 Comma => return true, 
@@ -204,7 +230,7 @@ impl<'a> TomlTable<'a> {
         }
         false
     }
-    
+
     /// Returns the last indentation of a key/value pair in the table.
     fn last_indent(&mut self) -> &'a str {
         use self::TableItem::*;
@@ -221,7 +247,7 @@ impl<'a> TomlTable<'a> {
                         first_space = Some(text);
                     }
                     if last_was_entry {
-                        return text
+                        return text;
                     }
                 }
                 Comment(_) | Comma => last_was_entry = false,
@@ -233,7 +259,7 @@ impl<'a> TomlTable<'a> {
         }
         first_space.unwrap_or("")
     }
-    
+
     /// Pushes the given items before the last space in the table
     fn push_before_space(&mut self, items: Vec<TableItem<'a>>) {
         if self.order.is_empty() {
@@ -258,21 +284,24 @@ impl<'a> TomlTable<'a> {
             }
         }
     }
-    
+
     /// Inserts a new item into the table.
     /// Note: This function attempts to be smart with the formatting.
-    pub fn insert<K, V>(&mut self, key: K, value: V) 
-            where K: Into<TomlKey<'a>>, V: Into<TomlValue<'a>> {
+    pub fn insert<K, V>(&mut self, key: K, value: V)
+        where K: Into<TomlKey<'a>>,
+              V: Into<TomlValue<'a>>
+    {
         use self::TableItem::*;
         let key = key.into();
         let value = value.into();
         if self.items.contains_key(&key) {
             self.items.insert(key, value);
         } else {
-            if ! self.inline {
-                let entry = Entry { 
-                    key: key, before_eq: " ", 
-                    after_eq: " "
+            if !self.inline {
+                let entry = Entry {
+                    key: key,
+                    before_eq: " ",
+                    after_eq: " ",
                 };
                 self.items.insert(key, value);
                 let mut values = Vec::new();
@@ -285,10 +314,11 @@ impl<'a> TomlTable<'a> {
                 self.push_before_space(values);
             } else {
                 let had_comma = self.has_trailing_comma();
-                if ! had_comma {
+                if !had_comma {
                     self.order.push(Comma);
                     self.order.push(Space(" "));
-                } else if ! self.order.is_empty() { // Pad with space
+                } else if !self.order.is_empty() {
+                    // Pad with space
                     let last = self.order.len() - 1;
                     if let Comma = self.order[last] {
                         self.order.push(Space(" "));
@@ -301,7 +331,7 @@ impl<'a> TomlTable<'a> {
             }
         }
     }
-    
+
     /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TableItem::*;

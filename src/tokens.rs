@@ -4,7 +4,7 @@ use debug;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
 
-/// Minimal scope awareness in order to distinguish keys from values when lexing 
+/// Minimal scope awareness in order to distinguish keys from values when lexing
 #[derive(Debug)]
 enum LexerScope {
     Key,
@@ -37,18 +37,18 @@ impl<'a> Tokens<'a> {
             scope_stack: Vec::new(),
         }
     }
-    
+
     /// Returns the line and cloumn of the tokenizer.
     pub fn current_position(&self) -> (usize, usize) {
         debug::get_position(self.text, self.start)
     }
-    
+
     /// Returns whether the remaining text starts with the given pattern.
     #[inline]
     fn next_is(&self, start: usize, pat: &str) -> bool {
         (&self.text[start..]).starts_with(pat)
     }
-    
+
     /// Returns whether the next chaaracter is the same as the given.
     #[inline]
     fn peek_is(&mut self, ch: char) -> bool {
@@ -58,7 +58,7 @@ impl<'a> Tokens<'a> {
             false
         }
     }
-    
+
     /// Returns whether the current tokenizer scope is inside a table.
     fn scope_is_table(&self) -> bool {
         if self.scope_stack.is_empty() {
@@ -68,7 +68,7 @@ impl<'a> Tokens<'a> {
             self.scope_stack[last] == '{'
         }
     }
-    
+
     /// Reads as many whitespace characters as possible.
     fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -87,14 +87,14 @@ impl<'a> Tokens<'a> {
         }
         Ok((start, Whitespace(&self.text[self.start..])))
     }
-    
+
     /// Reads a plain key.
     fn read_key(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
-                'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {
+                'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => {
                     self.chars.next();
                 }
                 _ => {
@@ -106,23 +106,23 @@ impl<'a> Tokens<'a> {
         }
         Ok((start, Key(&self.text[self.start..])))
     }
-    
+
     /// Reads a comment.
     fn read_comment(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             if self.next_is(i, "\r\n") || ch == '\n' {
-                let part = &self.text[self.start+1..i];
+                let part = &self.text[self.start + 1..i];
                 self.start = i;
                 return Ok((start, Comment(part)));
             } else {
                 self.chars.next();
             }
         }
-        Ok((start, Comment(&self.text[self.start+1..])))
+        Ok((start, Comment(&self.text[self.start + 1..])))
     }
-    
+
     /// Reads a bracket.
     fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
@@ -130,30 +130,34 @@ impl<'a> Tokens<'a> {
         let start = self.start;
         self.start += 1;
         // Only check for array of tables when in key scope
-        let ch = if open { '[' } else { ']' };
+        let ch = if open {
+            '['
+        } else {
+            ']'
+        };
         if let LexerScope::Key = self.scope {
             if self.peek_is(ch) {
                 self.chars.next(); // eat it
                 self.start += 1;
-                if open { 
+                if open {
                     return Ok((start, DoubleBracketOpen));
-                } else { 
+                } else {
                     return Ok((start, DoubleBracketClose));
                 }
             } else if open {
-                //print!("Open: stack: {:?} -> ", self.scope_stack);
+                // print!("Open: stack: {:?} -> ", self.scope_stack);
                 self.scope_stack.push('[');
-                //println!("{:?}", self.scope_stack);
+                // println!("{:?}", self.scope_stack);
                 return Ok((start, SingleBracketOpen));
             } else {
-                //print!("Close: stack: {:?} -> ", self.scope_stack);
+                // print!("Close: stack: {:?} -> ", self.scope_stack);
                 if self.scope_stack.is_empty() {
-                    //println!("Error!");
+                    // println!("Error!");
                     self.finished = true;
-                    return Err(UnmatchedClosingBrace { pos: self.start-1 });
+                    return Err(UnmatchedClosingBrace { pos: self.start - 1 });
                 } else {
                     self.scope_stack.pop();
-                    //println!("{:?}", self.scope_stack);
+                    // println!("{:?}", self.scope_stack);
                 }
                 return Ok((start, SingleBracketClose));
             }
@@ -163,25 +167,25 @@ impl<'a> Tokens<'a> {
                 return Ok((start, SingleBracketOpen));
             } else {
                 if self.scope_stack.is_empty() {
-                    //println!("Error!");
+                    // println!("Error!");
                     self.finished = true;
-                    return Err(UnmatchedClosingBrace { pos: self.start-1 });
+                    return Err(UnmatchedClosingBrace { pos: self.start - 1 });
                 } else {
                     self.scope_stack.pop();
-                    //println!("{:?}", self.scope_stack);
+                    // println!("{:?}", self.scope_stack);
                 }
                 return Ok((start, SingleBracketClose));
             }
         }
     }
-    
+
     /// Reads a string.
     fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
         let start = self.start;
         let mut escaped = false;
-        let multiline = if ! literal {
+        let multiline = if !literal {
             if self.next_is(self.start + 1, "\"\"") {
                 self.chars.next();
                 self.chars.next();
@@ -201,36 +205,48 @@ impl<'a> Tokens<'a> {
                 if multiline && self.next_is(i, "'''") {
                     self.chars.next();
                     self.chars.next();
-                    let part = &self.text[self.start+3 .. i]; // Remove apostrophes
+                    let part = &self.text[self.start + 3..i]; // Remove apostrophes
                     self.start = i + 3;
-                    return Ok((start, String { 
-                        text: part, literal: true, multiline: true
+                    return Ok((start,
+                               String {
+                        text: part,
+                        literal: true,
+                        multiline: true,
                     }));
-                } else if ch == '\'' && (! multiline) {
-                    let part = &self.text[self.start+1 .. i];
+                } else if ch == '\'' && (!multiline) {
+                    let part = &self.text[self.start + 1..i];
                     self.start = i + 1;
-                    return Ok((start, String { 
-                        text: part, literal: true, multiline: false
+                    return Ok((start,
+                               String {
+                        text: part,
+                        literal: true,
+                        multiline: false,
                     }));
                 }
             }
             Err(UnclosedLiteral { start: self.start })
         } else {
             while let Some((i, ch)) = self.chars.next() {
-                if ! escaped {
+                if !escaped {
                     if multiline && self.next_is(i, "\"\"\"") {
                         self.chars.next();
                         self.chars.next();
-                        let part = &self.text[self.start+3 .. i];
+                        let part = &self.text[self.start + 3..i];
                         self.start = i + 3;
-                        return Ok((start, String { 
-                            text: part, literal: false, multiline: true
+                        return Ok((start,
+                                   String {
+                            text: part,
+                            literal: false,
+                            multiline: true,
                         }));
-                    } else if ch == '"' && (! multiline) {
-                        let part = &self.text[self.start+1 .. i];
+                    } else if ch == '"' && (!multiline) {
+                        let part = &self.text[self.start + 1..i];
                         self.start = i + 1;
-                        return Ok((start, String { 
-                            text: part, literal: false, multiline: false
+                        return Ok((start,
+                                   String {
+                            text: part,
+                            literal: false,
+                            multiline: false,
                         }));
                     } else if ch == '\\' {
                         escaped = true;
@@ -255,7 +271,8 @@ impl<'a> Tokens<'a> {
                         }
                         _ => {
                             return Err(InvalidEscapeCharacter {
-                                start: self.start, pos: i
+                                start: self.start,
+                                pos: i,
                             });
                         }
                     }
@@ -264,14 +281,14 @@ impl<'a> Tokens<'a> {
             Err(UnclosedString { start: self.start })
         }
     }
-    
+
     // TODO: Don't do this as brokenly
     fn read_datetime(&mut self) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
-                '0' ... '9' | '-' | 'T' | ':' | 't' | 'Z' | '.' => {
+                '0'...'9' | '-' | 'T' | ':' | 't' | 'Z' | '.' => {
                     self.chars.next();
                 }
                 _ => {
@@ -285,16 +302,18 @@ impl<'a> Tokens<'a> {
         self.start = self.text.len();
         Ok((start, DateTime(part)))
     }
-    
+
     /// Reads an integer.
-    fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool)
-            -> Result<(usize, Token<'a>), TokenError> {
+    fn read_int(&mut self,
+                mut was_number: bool,
+                mut datetime_possible: bool)
+                -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
-                '0' ... '9' => {
+                '0'...'9' => {
                     was_number = true;
                     self.chars.next();
                 }
@@ -320,7 +339,8 @@ impl<'a> Tokens<'a> {
                 '_' => {
                     self.finished = true;
                     return Err(UnderscoreNotAfterNumber {
-                        start: self.start, pos: i
+                        start: self.start,
+                        pos: i,
                     });
                 }
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
@@ -330,7 +350,8 @@ impl<'a> Tokens<'a> {
                 }
                 _ => {
                     return Err(InvalidIntCharacter {
-                        start: self.start, pos: i
+                        start: self.start,
+                        pos: i,
                     });
                 }
             }
@@ -338,18 +359,23 @@ impl<'a> Tokens<'a> {
         let part = &self.text[self.start..];
         Ok((start, Int(part)))
     }
-    
+
     /// Reads a floating point number.
-    fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool)
-            -> Result<(usize, Token<'a>), TokenError> {
+    fn read_float(&mut self,
+                  mut exponent_found: bool,
+                  mut was_number: bool)
+                  -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
         let start = self.start;
-        
+
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
                 'e' | 'E' if exponent_found => {
-                    return Err(InvalidFloatCharacter { start: self.start, pos: i });
+                    return Err(InvalidFloatCharacter {
+                        start: self.start,
+                        pos: i,
+                    });
                 }
                 'e' | 'E' => {
                     self.chars.next();
@@ -358,7 +384,7 @@ impl<'a> Tokens<'a> {
                     }
                     exponent_found = true;
                 }
-                '0' ... '9' => {
+                '0'...'9' => {
                     self.chars.next();
                     was_number = true;
                 }
@@ -369,7 +395,8 @@ impl<'a> Tokens<'a> {
                 '_' => {
                     self.finished = true;
                     return Err(UnderscoreNotAfterNumber {
-                        start: self.start, pos: i
+                        start: self.start,
+                        pos: i,
                     });
                 }
                 ',' | ' ' | '\t' | '\n' | ']' | '#' => {
@@ -379,7 +406,8 @@ impl<'a> Tokens<'a> {
                 }
                 _ => {
                     return Err(InvalidFloatCharacter {
-                        start: self.start, pos: i
+                        start: self.start,
+                        pos: i,
                     });
                 }
             }
@@ -387,13 +415,13 @@ impl<'a> Tokens<'a> {
         let part = &self.text[self.start..];
         Ok((start, Float(part)))
     }
-    
+
     /// Reads a value. (right hand of an assignment or part of an array).
     fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), TokenError> {
         use self::Token::*;
         use self::TokenError::*;
         let start = self.start;
-        
+
         match ch {
             't' => {
                 if self.next_is(i, "true") {
@@ -405,7 +433,8 @@ impl<'a> Tokens<'a> {
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
-                    start: self.start, pos: i
+                    start: self.start,
+                    pos: i,
                 })
             }
             'f' => {
@@ -418,19 +447,17 @@ impl<'a> Tokens<'a> {
                 }
                 self.finished = true;
                 Err(InvalidValueCharacter {
-                    start: self.start, pos: i
+                    start: self.start,
+                    pos: i,
                 })
             }
-            '-' | '+' => {
-                self.read_int(false, false)
-            }
-            '0' ... '9' => {
-                self.read_int(true, true)
-            }
+            '-' | '+' => self.read_int(false, false),
+            '0'...'9' => self.read_int(true, true),
             _ => {
                 self.finished = true;
                 Err(InvalidValueCharacter {
-                    start: self.start, pos: i
+                    start: self.start,
+                    pos: i,
                 })
             }
         }
@@ -453,7 +480,11 @@ pub enum Token<'a> {
     Dot,
     Newline(&'a str),
     Key(&'a str), // Unquoted key
-    String { text: &'a str, literal: bool, multiline: bool },
+    String {
+        text: &'a str,
+        literal: bool,
+        multiline: bool,
+    },
     DateTime(&'a str),
     Int(&'a str),
     Float(&'a str),
@@ -461,12 +492,13 @@ pub enum Token<'a> {
 }
 
 impl<'a> Token<'a> {
-    /// Writes the TOML representation of this value to a string.  
+    /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
         use self::Token::*;
         match *self {
-            Whitespace(s) | Newline(s) | Key(s)
-            | DateTime(s) | Int(s) | Float(s) => out.push_str(s),
+            Whitespace(s) | Newline(s) | Key(s) | DateTime(s) | Int(s) | Float(s) => {
+                out.push_str(s)
+            }
             Comment(s) => {
                 out.push('#');
                 out.push_str(s);
@@ -505,25 +537,50 @@ impl<'a> Token<'a> {
 #[derive(Debug, Clone)]
 pub enum TokenError {
     /// The character at this position is not a valid whitespace character by the TOML definition.
-    InvalidWhitespace { pos: usize },
+    InvalidWhitespace {
+        pos: usize,
+    },
     /// A literal string starting here was not closed.
-    UnclosedLiteral { start: usize },
+    UnclosedLiteral {
+        start: usize,
+    },
     /// A regular string starting here was not closed.
-    UnclosedString { start: usize },
+    UnclosedString {
+        start: usize,
+    },
     /// A closing brace was found outside an open scope.
-    UnmatchedClosingBrace { pos: usize },
+    UnmatchedClosingBrace {
+        pos: usize,
+    },
     /// A character that isn't valid for a key was found inside one.
-    InvalidKeyCharacter { pos: usize },
+    InvalidKeyCharacter {
+        pos: usize,
+    },
     /// A character that isn't valid in a value was found inside one.
-    InvalidValueCharacter { start: usize, pos: usize },
+    InvalidValueCharacter {
+        start: usize,
+        pos: usize,
+    },
     /// A character that isn't valid for an integer was found inside one.
-    InvalidIntCharacter { start: usize, pos: usize },
+    InvalidIntCharacter {
+        start: usize,
+        pos: usize,
+    },
     /// This escaped character in a regular string does not denote a valid escape sequence.
-    InvalidEscapeCharacter { start: usize, pos: usize },
+    InvalidEscapeCharacter {
+        start: usize,
+        pos: usize,
+    },
     /// A character that isn't valid for a floating point number was found inside one.
-    InvalidFloatCharacter { start: usize, pos: usize },
+    InvalidFloatCharacter {
+        start: usize,
+        pos: usize,
+    },
     /// An underscore in an integer value was found at an invalid position.
-    UnderscoreNotAfterNumber { start: usize, pos: usize },
+    UnderscoreNotAfterNumber {
+        start: usize,
+        pos: usize,
+    },
 }
 
 impl TokenError {
@@ -579,16 +636,16 @@ impl TokenError {
 
 impl<'a> Iterator for Tokens<'a> {
     type Item = Result<(usize, Token<'a>), TokenError>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         use self::TokenError::*;
         use self::Token::*;
         let start = self.start;
-        
+
         if self.finished {
             return None;
         }
-        
+
         if let Some((i, ch)) = self.chars.next() {
             match ch {
                 ' ' | '\t' => {
@@ -612,9 +669,7 @@ impl<'a> Iterator for Tokens<'a> {
                 '}' => {
                     if self.scope_stack.is_empty() {
                         self.finished = true;
-                        return Some(Err(UnmatchedClosingBrace {
-                            pos: self.start-1
-                        }));
+                        return Some(Err(UnmatchedClosingBrace { pos: self.start - 1 }));
                     } else {
                         self.scope_stack.pop();
                     }
@@ -625,11 +680,11 @@ impl<'a> Iterator for Tokens<'a> {
                     self.start += 1;
                     if self.peek_is('\n') {
                         self.chars.next();
-                        let part = &self.text[self.start..self.start+2];
+                        let part = &self.text[self.start..self.start + 2];
                         self.start += 1;
                         // New line, new key
                         if self.scope_stack.is_empty() {
-                            self.scope = LexerScope::Key; 
+                            self.scope = LexerScope::Key;
                         }
                         return Some(Ok((start, Newline(part))));
                     } else {
@@ -641,7 +696,7 @@ impl<'a> Iterator for Tokens<'a> {
                     self.start += 1;
                     // New line, new key
                     if self.scope_stack.is_empty() {
-                        self.scope = LexerScope::Key; 
+                        self.scope = LexerScope::Key;
                     }
                     return Some(Ok((start, Newline("\n"))));
                 }
@@ -652,7 +707,7 @@ impl<'a> Iterator for Tokens<'a> {
                 }
                 '"' => {
                     return Some(self.read_string(false));
-                },
+                }
                 '\'' => {
                     return Some(self.read_string(true));
                 }
@@ -671,18 +726,13 @@ impl<'a> Iterator for Tokens<'a> {
                     match self.scope {
                         LexerScope::Value => {
                             return Some(self.read_value(i, ch));
-                            
+
                         }
                         LexerScope::Key => {
                             match ch {
-                                'a' ... 'z' | 'A' ... 'Z' | 
-                                '_' | '-' => {
-                                    return Some(self.read_key())
-                                }
+                                'a'...'z' | 'A'...'Z' | '_' | '-' => return Some(self.read_key()),
                                 _ => {
-                                    return Some(Err(InvalidKeyCharacter {
-                                        pos: i
-                                    }));
+                                    return Some(Err(InvalidKeyCharacter { pos: i }));
                                 }
                             }
                         }

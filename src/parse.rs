@@ -21,33 +21,67 @@ pub enum ParseError {
     /// The tokenizer/validator found an error in the input text.
     TokenError(TokenError),
     /// A part of this table or table array scope is invalid.
-    InvalidScope { start: usize, pos: usize },
+    InvalidScope {
+        start: usize,
+        pos: usize,
+    },
     /// The scope starting here wasn't completed.
-    UnfinishedScope { start: usize },
+    UnfinishedScope {
+        start: usize,
+    },
     /// The item starting here wasn't completed.
-    UnfinishedItem { start: usize },
+    UnfinishedItem {
+        start: usize,
+    },
     /// The value starting here wasn't finished.
-    UnfinishedValue { start: usize },
+    UnfinishedValue {
+        start: usize,
+    },
     /// This doesn't represent a valid TOML value.
-    InvalidValue { start: usize, pos: usize },
+    InvalidValue {
+        start: usize,
+        pos: usize,
+    },
     /// An equals sign was expected after a key.
-    MissingEquals { start: usize, pos: usize },
+    MissingEquals {
+        start: usize,
+        pos: usize,
+    },
     /// A value is missing between two commas in an array.
-    DoubleCommaInArray { start: usize, pos: usize },
+    DoubleCommaInArray {
+        start: usize,
+        pos: usize,
+    },
     /// A comma is missing between two values in an array.
-    MissingComma { start: usize, pos: usize },
+    MissingComma {
+        start: usize,
+        pos: usize,
+    },
     /// This isn't a valid item inside a table.
-    InvalidTableItem { pos: usize },
+    InvalidTableItem {
+        pos: usize,
+    },
     // TODO: Support this!
     /// This table was defined twice
-    TableDefinedTwice { pos: usize, original: usize },
+    TableDefinedTwice {
+        pos: usize,
+        original: usize,
+    },
     /// This key path was defined twice.
-    KeyDefinedTwice { pos: usize, original: usize },
+    KeyDefinedTwice {
+        pos: usize,
+        original: usize,
+    },
     /// This path is invalid (?).
     InvalidScopePath,
     /// A comma was found before any values.
-    NonFinalComma { pos: usize },
-    WrongValueTypeInArray { start: usize, pos: usize },
+    NonFinalComma {
+        pos: usize,
+    },
+    WrongValueTypeInArray {
+        start: usize,
+        pos: usize,
+    },
 }
 impl ParseError {
     pub fn show(&self, text: &str) {
@@ -130,13 +164,14 @@ struct Parser<'a> {
 }
 impl<'a> Parser<'a> {
     fn new(text: &'a str) -> Parser<'a> {
-        Parser {
-            tokens: tokens::tokens(text).peekable(),
-        }
+        Parser { tokens: tokens::tokens(text).peekable() }
     }
-    
-    fn read_scope(&mut self, scope: &mut Scope<'a>, array: bool, start: usize)
-            -> Result<(), ParseError> {
+
+    fn read_scope(&mut self,
+                  scope: &mut Scope<'a>,
+                  array: bool,
+                  start: usize)
+                  -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
         let mut was_key = false;
@@ -146,23 +181,32 @@ impl<'a> Parser<'a> {
             let (pos, token) = res?;
             match token {
                 Dot => {
-                    if ! was_key {
-                        return Err(InvalidScope { start: start, pos: pos });
+                    if !was_key {
+                        return Err(InvalidScope {
+                            start: start,
+                            pos: pos,
+                        });
                     } else {
                         scope.push_dot();
                         was_key = false;
                     }
                 }
-                SingleBracketClose if ! array => {
-                    if (! key_found) || (! was_key) {
-                        return Err(InvalidScope { start: start, pos: pos });
+                SingleBracketClose if !array => {
+                    if (!key_found) || (!was_key) {
+                        return Err(InvalidScope {
+                            start: start,
+                            pos: pos,
+                        });
                     }
                     closed = true;
                     break;
                 }
                 DoubleBracketClose if array => {
-                    if (! key_found) || (! was_key) {
-                        return Err(InvalidScope { start: start, pos: pos });
+                    if (!key_found) || (!was_key) {
+                        return Err(InvalidScope {
+                            start: start,
+                            pos: pos,
+                        });
                     }
                     closed = true;
                     break;
@@ -181,16 +225,19 @@ impl<'a> Parser<'a> {
                     scope.push_key(TomlKey::from_string(text, literal, multiline));
                 }
                 _ => {
-                    return Err(InvalidScope { start: start, pos: pos });
+                    return Err(InvalidScope {
+                        start: start,
+                        pos: pos,
+                    });
                 }
             }
         }
-        if ! closed {
+        if !closed {
             return Err(UnfinishedScope { start: start });
         }
         Ok(())
     }
-    
+
     fn read_array(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
@@ -205,15 +252,19 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     (pos, Comma) => {
-                        if ! was_comma {
+                        if !was_comma {
                             self.tokens.next();
                             array.push_comma();
                             was_comma = true;
                         } else {
-                            return Err(DoubleCommaInArray { start: start, pos: pos });
+                            return Err(DoubleCommaInArray {
+                                start: start,
+                                pos: pos,
+                            });
                         }
                     }
-                    (_, Whitespace(text)) | (_, Newline(text)) => {
+                    (_, Whitespace(text)) |
+                    (_, Newline(text)) => {
                         self.tokens.next();
                         array.push_space(text);
                     }
@@ -227,10 +278,11 @@ impl<'a> Parser<'a> {
                         }
                         let value = self.read_value(start)?;
                         match array.push(value) {
-                            Ok(()) => {},
+                            Ok(()) => {}
                             Err(_) => {
                                 return Err(WrongValueTypeInArray {
-                                    start: start, pos: pos
+                                    start: start,
+                                    pos: pos,
                                 });
                             }
                         }
@@ -248,7 +300,8 @@ impl<'a> Parser<'a> {
                         self.tokens.next();
                         break;
                     }
-                    (_, Whitespace(text)) | (_, Newline(text)) => {
+                    (_, Whitespace(text)) |
+                    (_, Newline(text)) => {
                         self.tokens.next();
                         array.push_space(text);
                     }
@@ -257,17 +310,22 @@ impl<'a> Parser<'a> {
                         array.push_comment(text);
                     }
                     (pos, _) => {
-                        return Err(MissingComma { start: start, pos: pos });
+                        return Err(MissingComma {
+                            start: start,
+                            pos: pos,
+                        });
                     }
                 }
             }
         }
-        
+
         Ok(TomlValue::Array(array))
     }
-    
-    fn read_inline_table(&mut self, start: usize, table: &mut TomlTable<'a>)
-            -> Result<(), ParseError> {
+
+    fn read_inline_table(&mut self,
+                         start: usize,
+                         table: &mut TomlTable<'a>)
+                         -> Result<(), ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
         let mut reading_key = true;
@@ -280,13 +338,17 @@ impl<'a> Parser<'a> {
                         table.push_space(text);
                     }
                     (pos, Comma) => {
-                        if ! was_comma {
+                        if !was_comma {
                             was_comma = true;
                         } else {
-                            return Err(DoubleCommaInArray { start: start, pos: pos });
+                            return Err(DoubleCommaInArray {
+                                start: start,
+                                pos: pos,
+                            });
                         }
                     }
-                    (pos, Key(_)) | (pos, String { .. }) => {
+                    (pos, Key(_)) |
+                    (pos, String { .. }) => {
                         if was_comma {
                             return Err(NonFinalComma { pos: pos });
                         }
@@ -294,7 +356,9 @@ impl<'a> Parser<'a> {
                             TomlKey::Plain(text)
                         } else if let String { text, literal, multiline } = res.1 {
                             TomlKey::String {
-                                text: text, literal: literal, multiline: multiline
+                                text: text,
+                                literal: literal,
+                                multiline: multiline,
                             }
                         } else {
                             unreachable!();
@@ -322,39 +386,49 @@ impl<'a> Parser<'a> {
                         return Ok(());
                     }
                     (pos, _) => {
-                        return Err(MissingComma { start: start, pos: pos });
+                        return Err(MissingComma {
+                            start: start,
+                            pos: pos,
+                        });
                     }
                 }
             }
         }
         Err(UnfinishedValue { start: start })
     }
-    
-    fn read_value(&mut self, start: usize)
-            -> Result<TomlValue<'a>, ParseError> {
+
+    fn read_value(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
             (_, Int(text)) => Ok(TomlValue::int(text)),
             (_, Float(text)) => Ok(TomlValue::float(text)),
-            (_, String { text, literal, multiline }) => Ok(TomlValue::string(text, literal, multiline)),
+            (_, String { text, literal, multiline }) => {
+                Ok(TomlValue::string(text, literal, multiline))
+            }
             (_, Bool(value)) => Ok(TomlValue::bool(value)),
             (_, DateTime(text)) => Ok(TomlValue::datetime(text)),
-            (pos, SingleBracketOpen) => {
-                Ok(self.read_array(pos)?)
-            }
+            (pos, SingleBracketOpen) => Ok(self.read_array(pos)?),
             (pos, CurlyOpen) => {
-                let mut table = TomlTable::new(true);
+                let mut table = TomlTable::new_inline();
                 self.read_inline_table(pos, &mut table)?;
                 Ok(TomlValue::Table(table))
             }
-            (pos, _) => Err(InvalidValue { start: start, pos: pos }),
-        }        
+            (pos, _) => {
+                Err(InvalidValue {
+                    start: start,
+                    pos: pos,
+                })
+            }
+        }
     }
-    
-    fn read_item(&mut self, start: usize, key: TomlKey<'a>)
-            -> Result<(TomlKey<'a>, Option<&'a str>, Option<&'a str>, TomlValue<'a>), ParseError> {
+
+    fn read_item
+        (&mut self,
+         start: usize,
+         key: TomlKey<'a>)
+         -> Result<(TomlKey<'a>, Option<&'a str>, Option<&'a str>, TomlValue<'a>), ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
         let mut before_eq = None;
@@ -363,12 +437,15 @@ impl<'a> Parser<'a> {
             before_eq = Some(text);
             next = self.next_or(UnfinishedItem { start: start })?;
         }
-        
+
         if let Equals = next.1 {
         } else {
-            return Err(MissingEquals { start: start, pos: next.0 });
+            return Err(MissingEquals {
+                start: start,
+                pos: next.0,
+            });
         }
-        
+
         let mut after_eq = None;
         let mut has_whitespace_after = false;
         if let (_, Whitespace(_)) = self.peek_or(UnfinishedItem { start: start })? {
@@ -380,44 +457,41 @@ impl<'a> Parser<'a> {
                 after_eq = Some(text);
             }
         }
-        
+
         let value_start = self.peek_or(UnfinishedItem { start: start })?.0;
         let value = self.read_value(value_start)?;
         Ok((key, before_eq, after_eq, value))
     }
-    
+
     fn next_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
         match self.tokens.next() {
-            Some(val) => {
-                Ok(val?)
-            },
-            None => Err(err)
+            Some(val) => Ok(val?),
+            None => Err(err),
         }
     }
-    
+
     fn peek_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
         match self.tokens.peek() {
             Some(res) => {
                 match *res {
-                    Err(ref e) => {
-                        Err(ParseError::from(e.clone()))
-                    },
+                    Err(ref e) => Err(ParseError::from(e.clone())),
                     Ok(token) => Ok(token),
                 }
             }
-            None => Err(err)
+            None => Err(err),
         }
     }
-    
+
     fn read_table(&mut self, table: &mut TomlTable<'a>) -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
         while self.tokens.peek().is_some() {
             match *self.tokens.peek().unwrap() {
                 Err(ref e) => {
-                    return Err(ParseError::from(e.clone())); 
+                    return Err(ParseError::from(e.clone()));
                 }
-                Ok((_, SingleBracketOpen)) | Ok((_, DoubleBracketOpen)) => {
+                Ok((_, SingleBracketOpen)) |
+                Ok((_, DoubleBracketOpen)) => {
                     return Ok(());
                 }
                 _ => {}
@@ -433,12 +507,15 @@ impl<'a> Parser<'a> {
                 (_, Comment(text)) => {
                     table.push_comment(text);
                 }
-                (pos, Key(_)) | (pos, String { .. }) => {
+                (pos, Key(_)) |
+                (pos, String { .. }) => {
                     let key = if let Key(text) = res.1 {
                         TomlKey::Plain(text)
                     } else if let String { text, literal, multiline } = res.1 {
                         TomlKey::String {
-                            text: text, literal: literal, multiline: multiline
+                            text: text,
+                            literal: literal,
+                            multiline: multiline,
                         }
                     } else {
                         unreachable!();
@@ -454,11 +531,11 @@ impl<'a> Parser<'a> {
         }
         Ok(())
     }
-    
+
     fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
-        let mut top_table = TomlTable::new(false);
+        let mut top_table = TomlTable::new_regular();
         while let Some(res) = self.tokens.next() {
             match res? {
                 (_, Whitespace(text)) => {
@@ -470,13 +547,12 @@ impl<'a> Parser<'a> {
                 (pos, SingleBracketOpen) => {
                     let mut scope = Scope::new();
                     self.read_scope(&mut scope, false, pos)?;
-                    
+
                     // TODO: Validate that the scope hasn't been used before
                     {
-                        let mut table = if let TomlValue::Table(ref mut table) = 
-                            *top_table.get_or_insert_with(scope.path(),
-                                || TomlValue::Table(TomlTable::new(false))
-                        )? {
+                        let mut table = if let TomlValue::Table(ref mut table) =
+                                               *top_table.get_or_insert_with(scope.path(),
+                                                || TomlValue::Table(TomlTable::new_regular()))? {
                             table
                         } else {
                             // TODO: improve this error
@@ -485,24 +561,27 @@ impl<'a> Parser<'a> {
                         self.read_table(&mut table)?;
                     }
                     top_table.push_scope(scope);
-                    
+
                 }
                 (pos, DoubleBracketOpen) => {
                     let mut scope = Scope::new();
                     self.read_scope(&mut scope, true, pos)?;
-                    //let mut table = top_table.get_or_create_table(scope.path());
-                    
-                    //println!("Table: {:?}", table);
+                    // let mut table = top_table.get_or_create_table(scope.path());
+
+                    // println!("Table: {:?}", table);
                 }
                 (_, Comment(text)) => {
                     top_table.push_comment(text);
                 }
-                (pos, Key(_)) | (pos, String { .. }) => {
+                (pos, Key(_)) |
+                (pos, String { .. }) => {
                     let key = if let Key(text) = res?.1 {
                         TomlKey::Plain(text)
                     } else if let String { text, literal, multiline } = res?.1 {
                         TomlKey::String {
-                            text: text, literal: literal, multiline: multiline
+                            text: text,
+                            literal: literal,
+                            multiline: multiline,
                         }
                     } else {
                         unreachable!();

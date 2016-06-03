@@ -38,21 +38,21 @@ pub fn escape_string(text: &str) -> String {
     escaped
 }
 
-/// Creates a TOML key from a user-supplied key. 
+/// Creates a TOML key from a user-supplied key.
 /// If the key is valid as a 'plain' TOML key, it is borrowed,
 /// but otherwise an escaped string will be created.
 pub fn create_key<'a>(text: &'a str) -> Cow<'a, str> {
     let mut chars = text.chars();
     let mut simple = true;
     match chars.next().unwrap() {
-        'a' ... 'z' | 'A' ... 'Z' | '_' | '-' => {
+        'a'...'z' | 'A'...'Z' | '_' | '-' => {
             for ch in text.chars() {
                 match ch {
-                    'a' ... 'z' | 'A' ... 'Z' | '0' ... '9' | '_' | '-' => {}
+                    'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => {}
                     _ => simple = false,
                 }
             }
-        },
+        }
         _ => simple = false,
     }
     if simple {
@@ -71,7 +71,8 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
     let mut escaped = false;
     let mut escaped_whitespace = false;
     let mut chars = text.char_indices().peekable();
-    if multiline { // Ignore first newline in multiline strings
+    if multiline {
+        // Ignore first newline in multiline strings
         if let Some(&(_, '\n')) = chars.peek() {
             chars.next();
         }
@@ -81,7 +82,7 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             match ch {
                 ch if ch.is_whitespace() => {
                     escaped_whitespace = true;
-                },
+                }
                 'n' => {
                     string.push('\n');
                     escaped = false;
@@ -133,6 +134,6 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             }
         }
     }
-    
+
     Cow::Owned(string)
 }
