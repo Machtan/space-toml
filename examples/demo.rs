@@ -73,12 +73,12 @@ fn main() {
             println!("{}", out);
             assert_eq!(simple, &out);
             println!("Parsed table written and validated!");
-            table.get_or_insert_with(&["hello"], || TomlTable::new_regular())
+            table.find_or_insert_with(&["hello"], || TomlTable::new_regular())
                 .expect("Could not find table 'hello'")
                 .table_mut()
                 .unwrap()
                 .insert("test", "value");
-            table.get_or_insert_table(&["bob", "something"])
+            table.find_or_insert_table(&["bob", "something"])
                 .expect("Could not find bob.something")
                 .insert("Hello snorri", "Would you care,\n for a cuppa\"\" value?");
             table.insert("What_now_Smorri", "More strings, since other values aren't implemented yet");
