@@ -115,6 +115,22 @@ impl<'a> TomlValue<'a> {
         }
     }
 
+    pub fn table_mut(&mut self) -> Option<&mut TomlTable<'a>> {
+        if let TomlValue::Table(ref mut table) = *self {
+            Some(table)
+        } else {
+            None
+        }
+    }
+
+    pub fn table(&self) -> Option<&TomlTable<'a>> {
+        if let TomlValue::Table(ref table) = *self {
+            Some(table)
+        } else {
+            None
+        }
+    }
+
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TomlValue::*;
