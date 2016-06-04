@@ -233,6 +233,14 @@ impl<'a> TomlTable<'a> {
         }
     }
 
+    pub fn get<K: Into<TomlKey<'a>>>(&self, key: K) -> Option<&TomlValue<'a>> {
+        self.items.get(&key.into())
+    }
+
+    pub fn get_mut<K: Into<TomlKey<'a>>>(&mut self, key: K) -> Option<&mut TomlValue<'a>> {
+        self.items.get_mut(&key.into())
+    }
+
     /// Returns whether the table is empty. The table might still contain format items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
