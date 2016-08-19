@@ -270,16 +270,38 @@ impl<'a> Tokens<'a> {
                             escaped = false;
                         }
                         'u' => {
-                            // TODO: validate x4 unicode
                             for _ in 0..4 {
-                                self.chars.next();
+                                if let Some((i, ch)) = self.chars.next() {
+                                    match ch {
+                                        '0'...'9' | 'a'...'f' | 'A'...'F' => {},
+                                        _ => {
+                                            return Err(InvalidEscapeCharacter {
+                                                start: self.start,
+                                                pos: i
+                                            });
+                                        },
+                                    }
+                                } else {
+                                    break;
+                                }
                             }
                             escaped = false;
                         } 
                         'U' => {
-                            // TODO: validate x8 unicode
                             for _ in 0..8 {
-                                self.chars.next();
+                                if let Some((i, ch)) = self.chars.next() {
+                                    match ch {
+                                        '0'...'9' | 'a'...'f' | 'A'...'F' => {},
+                                        _ => {
+                                            return Err(InvalidEscapeCharacter {
+                                                start: self.start,
+                                                pos: i
+                                            });
+                                        },
+                                    }
+                                } else {
+                                    break;
+                                }
                             }
                             escaped = false;
                         }
