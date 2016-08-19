@@ -1,4 +1,4 @@
-
+use std::string::ToString;
 use std::borrow::{Borrow, Cow};
 use std::hash;
 use utils::{write_string, create_key, clean_string};
@@ -61,6 +61,11 @@ impl<'a> TomlKey<'a> {
             Plain(text) | User(text) => Cow::Borrowed(text),
             String { text, literal, multiline } => clean_string(text, literal, multiline),
         }
+    }
+    
+    /// Returns the key as a String.
+    pub fn to_string(&self) -> String {
+        self.normalized().to_string()
     }
 }
 

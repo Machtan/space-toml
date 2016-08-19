@@ -43,6 +43,11 @@ fn main() {
     
     inline = { alice = "some", key = 2 }
     
+    multi = """\
+    Hello World!
+    This is \"multiline\"!\
+    """
+    
     date1 = 1979-05-27T07:32:00Z
     date2 = 1979-05-27T00:32:00-07:00
     date3 = 1979-05-27T00:32:00.999999-07:00

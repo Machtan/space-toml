@@ -2,7 +2,7 @@
 use key::TomlKey;
 use value::TomlValue;
 use scope::Scope;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
 
 /// A format item for a TOML table.
 #[derive(Debug)]
@@ -128,7 +128,7 @@ impl<'a> TomlTable<'a> {
         where F: FnOnce() -> T,
               T: Into<TomlValue<'a>>
     {
-        match path {
+        match *path {
             [key] => Ok(self.items.entry(key).or_insert_with(|| default().into())),
             [key, _..] => {
                 match *self.items
@@ -287,6 +287,14 @@ impl<'a> TomlTable<'a> {
             }
         }
         first_space.unwrap_or("")
+    }
+    
+    fn iter(&self) -> hash_map::Iter<TomlKey<'a>, TomlValue<'a>> {
+        self.items.iter()
+    }
+    
+    fn iter_mut(&mut self) -> hash_map::IterMut<TomlKey<'a>, TomlValue<'a>> {
+        self.items.iter_mut()
     }
 
     /// Pushes the given items before the last space in the table

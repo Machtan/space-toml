@@ -253,21 +253,35 @@ impl<'a> Tokens<'a> {
                     }
                 } else {
                     match ch {
-                        ' ' | '\t' | '\n' => {}
+                        '\r' => {
+                            if let Some((_, '\n')) = self.chars.next() {
+                                escaped = false;
+                            } else {
+                                return Err(InvalidEscapeCharacter {
+                                    start: self.start,
+                                    pos: i,
+                                });
+                            }
+                        }
+                        ' ' | '\t' | '\n' => {
+                            escaped = false;
+                        }
                         'b' | 't' | 'n' | 'f' | 'r' | '"' | '\\' => {
                             escaped = false;
                         }
                         'u' => {
-                            println!("Should validate x4 unicode");
+                            // TODO: validate x4 unicode
                             for _ in 0..4 {
                                 self.chars.next();
                             }
+                            escaped = false;
                         } 
                         'U' => {
-                            println!("Should validate x8 unicode");
+                            // TODO: validate x8 unicode
                             for _ in 0..8 {
                                 self.chars.next();
                             }
+                            escaped = false;
                         }
                         _ => {
                             return Err(InvalidEscapeCharacter {
@@ -629,7 +643,16 @@ impl TokenError {
                 println!("Invalid key character at {}:{} :", line, col);
                 debug::show_invalid_character(text, pos);
             }
-            _ => println!("Error: {:?}", *self),
+            InvalidWhitespace { pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Invalid whitespace character at {}:{} :", line, col);
+                debug::show_invalid_character(text, pos);
+            }
+            UnderscoreNotAfterNumber { start, pos } => {
+                let (line, col) = debug::get_position(text, pos);
+                println!("Underscore not after number at {}:{} :", line, col);
+                debug::show_invalid_part(text, start, pos);
+            },
         }
     }
 }
