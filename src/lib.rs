@@ -1,7 +1,8 @@
 #![feature(question_mark)]
 #![feature(slice_patterns)]
 
-mod debug;
+pub mod debug;
+
 mod utils;
 mod tokens;
 mod parse;
