@@ -301,11 +301,13 @@ impl<'a> TomlTable<'a> {
         first_space.unwrap_or("")
     }
     
-    fn iter(&self) -> hash_map::Iter<TomlKey<'a>, TomlValue<'a>> {
+    /// Iterates over the keys and values in the table.
+    pub fn iter(&self) -> hash_map::Iter<TomlKey<'a>, TomlValue<'a>> {
         self.items.iter()
     }
     
-    fn iter_mut(&mut self) -> hash_map::IterMut<TomlKey<'a>, TomlValue<'a>> {
+    /// Iterates mutably over the keys and values in the table.
+    pub fn iter_mut(&mut self) -> hash_map::IterMut<TomlKey<'a>, TomlValue<'a>> {
         self.items.iter_mut()
     }
 
