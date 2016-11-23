@@ -5,7 +5,7 @@
 pub mod debug;
 
 mod utils;
-mod tokens;
+mod lexer;
 mod parse;
 mod key;
 mod scope;
@@ -13,8 +13,12 @@ mod table;
 mod array;
 mod value;
 
-pub use tokens::{tokens, Tokens, Token, TokenError};
+pub use lexer::{tokens, Tokens, Token};
+/// An error found when lexing a TOML document.
+pub type LexError<'a> = lexer::Error<'a>;
+/// The kinds of errors that can be found when lexing a TOML document.
+pub type LexerErrorKind = lexer::ErrorKind;
 pub use table::{CreatePathError, Table};
 pub use array::Array;
 pub use value::Value;
-pub use parse::{parse, ParseError};
+pub use parse::{parse, Error, ErrorKind, Result};

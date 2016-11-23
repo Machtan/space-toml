@@ -1,7 +1,10 @@
 
 use std::iter::{Iterator, Peekable};
+use std::fmt;
+use std::result;
+use std::error;
 
-use tokens::{self, TokenError, Token, Tokens};
+use lexer::{self, Token, Tokens};
 use key::{Key, KeyPrivate};
 use table::{Table, TablePrivate, CreatePathError};
 use scope::Scope;
@@ -10,16 +13,15 @@ use value::{Value, ValuePrivate};
 use debug;
 
 /// Parses the given text as a TOML document and returns the top-level table for the document.
-pub fn parse(text: &str) -> Result<Table, ParseError> {
-    let mut parser = Parser::new(text);
-    parser.parse()
+pub fn parse<'a>(text: &'a str) -> Result<'a, Table> {
+    Parser::new(text).parse()
 }
 
-/// An error found when parsing a TOML document.
-#[derive(Debug)]
-pub enum ParseError {
-    /// The tokenizer/validator found an error in the input text.
-    TokenError(TokenError),
+/// The kinds of errors found when parsing TOML documents.
+#[derive(Debug, Clone)]
+pub enum ErrorKind<'a> {
+    /// The lexer found an error in the input text.
+    Lex(lexer::Error<'a>),
     /// A part of this table or table array scope is invalid.
     InvalidScope {
         /// The byte index of the scope ([)
@@ -106,65 +108,81 @@ pub enum ParseError {
         pos: usize,
     },
 }
-impl ParseError {
-    // TODO: Implement error instead
-    /// Prints a nice error message.
-    pub fn show(&self, text: &str) {
-        use self::ParseError::*;
-        match *self {
-            TokenError(ref err) => {
-                print!("Tokens: ");
-                err.show(text);
+
+/// An error found when parsing a TOML document.
+#[derive(Debug, Clone)]
+pub struct Error<'a> {
+    /// What kind of error this is.
+    pub kind: ErrorKind<'a>,
+    /// The text that was being parsed.
+    pub text: &'a str,
+}
+
+impl<'a> Error<'a> {
+    fn new(text: &'a str, kind: ErrorKind<'a>) -> Error<'a> {
+        Error {
+            kind: kind,
+            text: text,
+        }
+    }
+}
+
+impl<'a> fmt::Display for Error<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ErrorKind::*;
+        match self.kind {
+            Lex(ref err) => {
+                err.fmt(f)
             }
             InvalidScope { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Invalid scope found at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             UnfinishedScope { start } => {
-                let (line, col) = debug::get_position(text, start);
+                let (line, col) = debug::get_position(self.text, start);
                 println!("Unifinished scope starting at {}:{} :", line, col);
-                debug::show_unclosed(text, start);
+                debug::write_unclosed(self.text, start, f)
             }
             UnfinishedItem { start } => {
-                let (line, col) = debug::get_position(text, start);
+                let (line, col) = debug::get_position(self.text, start);
                 println!("No value found for key at {}:{} :", line, col);
-                debug::show_unclosed(text, start);
+                debug::write_unclosed(self.text, start, f)
             }
             UnfinishedValue { start } => {
-                let (line, col) = debug::get_position(text, start);
+                let (line, col) = debug::get_position(self.text, start);
                 println!("Unifinished value starting at {}:{} :", line, col);
-                debug::show_unclosed(text, start);
+                debug::write_unclosed(self.text, start, f)
             }
             MissingEquals { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("'=' expected at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             InvalidValue { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Invalid value found at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             DoubleCommaInArray { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Invalid comma in array at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             MissingComma { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Expected comma in array at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             InvalidTableItem { pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Invalid top_level item found at {}:{} :", line, col);
-                debug::show_invalid_character(text, pos);
+                debug::write_invalid_character(self.text, pos, f)
             }
             WrongValueTypeInArray { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
                 println!("Value of invalid type found in array at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                debug::write_invalid_part(self.text, start, pos, f)
             }
             _ => {
                 unimplemented!();
@@ -172,33 +190,47 @@ impl ParseError {
         }
     }
 }
-impl From<TokenError> for ParseError {
-    fn from(err: TokenError) -> ParseError {
-        ParseError::TokenError(err)
-    }
-}
-impl From<CreatePathError> for ParseError {
-    fn from(err: CreatePathError) -> ParseError {
-        let _ = err;
-        ParseError::InvalidScopePath
+
+impl<'a> From<lexer::Error<'a>> for Error<'a> {
+    fn from(err: lexer::Error) -> Error {
+        Error::new(err.text, ErrorKind::Lex(err))
     }
 }
 
+impl<'a> error::Error for Error<'a> {
+    fn description(&self) -> &str {
+        use self::ErrorKind::*;
+        match self.kind {
+            Lex(ref err) => err.description(),
+            _ => "An error found while parsing TOML"
+        }
+    }
+}
+
+/// The result of parsing a TOML document.
+pub type Result<'a, T> = result::Result<T, Error<'a>>;
+
 struct Parser<'a> {
+    text: &'a str,
     tokens: Peekable<Tokens<'a>>,
 }
 impl<'a> Parser<'a> {
     fn new(text: &'a str) -> Parser<'a> {
-        Parser { tokens: tokens::tokens(text).peekable() }
+        Parser { text: text, tokens: lexer::tokens(text).peekable() }
+    }
+
+    /// Returns an error of the given kind.
+    fn err<T>(&mut self, kind: ErrorKind<'a>) -> Result<'a, T> {
+        Err(Error::new(self.text, kind))
     }
 
     fn read_scope(&mut self,
                   scope: &mut Scope<'a>,
                   array: bool,
                   start: usize)
-                  -> Result<(), ParseError> {
-        use tokens::Token::*;
-        use self::ParseError::*;
+                  -> Result<'a, ()> {
+        use lexer::Token::*;
+        use self::ErrorKind::*;
         let mut was_key = false;
         let mut key_found = false;
         let mut closed = false;
@@ -207,7 +239,7 @@ impl<'a> Parser<'a> {
             match token {
                 Dot => {
                     if !was_key {
-                        return Err(InvalidScope {
+                        return self.err(InvalidScope {
                             start: start,
                             pos: pos,
                         });
@@ -218,7 +250,7 @@ impl<'a> Parser<'a> {
                 }
                 SingleBracketClose if !array => {
                     if (!key_found) || (!was_key) {
-                        return Err(InvalidScope {
+                        return self.err(InvalidScope {
                             start: start,
                             pos: pos,
                         });
@@ -228,7 +260,7 @@ impl<'a> Parser<'a> {
                 }
                 DoubleBracketClose if array => {
                     if (!key_found) || (!was_key) {
-                        return Err(InvalidScope {
+                        return self.err(InvalidScope {
                             start: start,
                             pos: pos,
                         });
@@ -250,7 +282,7 @@ impl<'a> Parser<'a> {
                     scope.push_key(Key::from_string(text, literal, multiline));
                 }
                 _ => {
-                    return Err(InvalidScope {
+                    return self.err(InvalidScope {
                         start: start,
                         pos: pos,
                     });
@@ -258,14 +290,14 @@ impl<'a> Parser<'a> {
             }
         }
         if !closed {
-            return Err(UnfinishedScope { start: start });
+            return self.err(UnfinishedScope { start: start });
         }
         Ok(())
     }
 
-    fn read_array(&mut self, start: usize) -> Result<Value<'a>, ParseError> {
-        use self::ParseError::*;
-        use tokens::Token::*;
+    fn read_array(&mut self, start: usize) -> Result<'a, Value<'a>> {
+        use self::ErrorKind::*;
+        use lexer::Token::*;
         let mut array = Array::new();
         let mut is_reading_value = true;
         let mut was_comma = false;
@@ -282,7 +314,7 @@ impl<'a> Parser<'a> {
                             array.push_comma();
                             was_comma = true;
                         } else {
-                            return Err(DoubleCommaInArray {
+                            return self.err(DoubleCommaInArray {
                                 start: start,
                                 pos: pos,
                             });
@@ -299,13 +331,13 @@ impl<'a> Parser<'a> {
                     }
                     (pos, _) => {
                         if was_comma {
-                            return Err(NonFinalComma { pos: pos });
+                            return self.err(NonFinalComma { pos: pos });
                         }
                         let value = self.read_value(start)?;
                         match array.push(value) {
                             Ok(()) => {}
                             Err(_) => {
-                                return Err(WrongValueTypeInArray {
+                                return self.err(WrongValueTypeInArray {
                                     start: start,
                                     pos: pos,
                                 });
@@ -335,7 +367,7 @@ impl<'a> Parser<'a> {
                         array.push_comment(text);
                     }
                     (pos, _) => {
-                        return Err(MissingComma {
+                        return self.err(MissingComma {
                             start: start,
                             pos: pos,
                         });
@@ -350,9 +382,9 @@ impl<'a> Parser<'a> {
     fn read_inline_table(&mut self,
                          start: usize,
                          table: &mut Table<'a>)
-                         -> Result<(), ParseError> {
-        use self::ParseError::*;
-        use tokens::Token::*;
+                         -> Result<'a, ()> {
+        use self::ErrorKind::*;
+        use lexer::Token::*;
         let mut reading_key = true;
         let mut was_comma = false;
         while let Some(res) = self.tokens.next() {
@@ -366,7 +398,7 @@ impl<'a> Parser<'a> {
                         if !was_comma {
                             was_comma = true;
                         } else {
-                            return Err(DoubleCommaInArray {
+                            return self.err(DoubleCommaInArray {
                                 start: start,
                                 pos: pos,
                             });
@@ -381,7 +413,7 @@ impl<'a> Parser<'a> {
                     }
                     (pos, String { text, literal, multiline }) => {
                         if was_comma {
-                            return Err(NonFinalComma { pos: pos });
+                            return self.err(NonFinalComma { pos: pos });
                         }
                         let key = Key::String {
                             text: text,
@@ -396,7 +428,7 @@ impl<'a> Parser<'a> {
                     (_, CurlyClose) => {
                         return Ok(());
                     }
-                    (pos, _) => return Err(InvalidTableItem { pos: pos }),
+                    (pos, _) => return self.err(InvalidTableItem { pos: pos }),
                 }
             } else {
                 match res? {
@@ -411,7 +443,7 @@ impl<'a> Parser<'a> {
                         return Ok(());
                     }
                     (pos, _) => {
-                        return Err(MissingComma {
+                        return self.err(MissingComma {
                             start: start,
                             pos: pos,
                         });
@@ -419,12 +451,12 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        Err(UnfinishedValue { start: start })
+        self.err(UnfinishedValue { start: start })
     }
 
-    fn read_value(&mut self, start: usize) -> Result<Value<'a>, ParseError> {
-        use self::ParseError::*;
-        use tokens::Token::*;
+    fn read_value(&mut self, start: usize) -> Result<'a, Value<'a>> {
+        use self::ErrorKind::*;
+        use lexer::Token::*;
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
             (_, Int(text)) => Ok(Value::new_int(text)),
@@ -441,7 +473,7 @@ impl<'a> Parser<'a> {
                 Ok(Value::Table(table))
             }
             (pos, _) => {
-                Err(InvalidValue {
+                self.err(InvalidValue {
                     start: start,
                     pos: pos,
                 })
@@ -453,9 +485,9 @@ impl<'a> Parser<'a> {
         (&mut self,
          start: usize,
          key: Key<'a>)
-         -> Result<(Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>), ParseError> {
-        use self::ParseError::*;
-        use tokens::Token::*;
+         -> Result<'a, (Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>)> {
+        use self::ErrorKind::*;
+        use lexer::Token::*;
         let mut before_eq = None;
         let mut next = self.next_or(UnfinishedItem { start: start })?;
         if let Whitespace(text) = next.1 {
@@ -465,7 +497,7 @@ impl<'a> Parser<'a> {
 
         if let Equals = next.1 {
         } else {
-            return Err(MissingEquals {
+            return self.err(MissingEquals {
                 start: start,
                 pos: next.0,
             });
@@ -488,32 +520,30 @@ impl<'a> Parser<'a> {
         Ok((key, before_eq, after_eq, value))
     }
 
-    fn next_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
+    fn next_or(&mut self, err: ErrorKind<'a>) -> Result<'a, (usize, Token<'a>)> {
         match self.tokens.next() {
             Some(val) => Ok(val?),
-            None => Err(err),
+            None => self.err(err),
         }
     }
 
-    fn peek_or(&mut self, err: ParseError) -> Result<(usize, Token<'a>), ParseError> {
-        match self.tokens.peek() {
-            Some(res) => {
-                match *res {
-                    Err(ref e) => Err(ParseError::from(e.clone())),
-                    Ok(token) => Ok(token),
-                }
-            }
-            None => Err(err),
-        }
+    fn peek_or(&mut self, err: ErrorKind<'a>) -> Result<'a, (usize, Token<'a>)> {
+        if let Some(res) = self.tokens.peek() {
+            return match *res {
+                Err(ref e) => Err(Error::from(e.clone())),
+                Ok(token) => Ok(token),
+            };
+        } 
+        self.err(err)
     }
 
-    fn read_table(&mut self, table: &mut Table<'a>) -> Result<(), ParseError> {
-        use tokens::Token::*;
-        use self::ParseError::*;
+    fn read_table(&mut self, table: &mut Table<'a>) -> Result<'a, ()> {
+        use lexer::Token::*;
+        use self::ErrorKind::*;
         while self.tokens.peek().is_some() {
             match *self.tokens.peek().unwrap() {
                 Err(ref e) => {
-                    return Err(ParseError::from(e.clone()));
+                    return Err(Error::from(e.clone()));
                 }
                 Ok((_, SingleBracketOpen)) |
                 Ok((_, DoubleBracketOpen)) => {
@@ -549,16 +579,16 @@ impl<'a> Parser<'a> {
                     table.insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, _) => {
-                    return Err(InvalidTableItem { pos: pos });
+                    return self.err(InvalidTableItem { pos: pos });
                 }
             }
         }
         Ok(())
     }
 
-    fn parse(&mut self) -> Result<Table<'a>, ParseError> {
-        use tokens::Token::*;
-        use self::ParseError::*;
+    fn parse(mut self) -> Result<'a, Table<'a>> {
+        use lexer::Token::*;
+        use self::ErrorKind::*;
         let mut top_table = Table::new_regular();
         while let Some(res) = self.tokens.next() {
             match res? {
@@ -574,13 +604,14 @@ impl<'a> Parser<'a> {
 
                     // TODO: Validate that the scope hasn't been used before
                     {
-                        let mut table = if let Value::Table(ref mut table) =
-                                               *top_table.find_or_insert_with(scope.path(),
-                                                 || Value::Table(Table::new_regular()))? {
-                            table
-                        } else {
-                            // TODO: improve this error
-                            return Err(InvalidScopePath);
+                        let mut table = match top_table.find_or_insert_table(scope.path()) {
+                            Err(CreatePathError::InvalidScopeTable) => {
+                                return self.err(InvalidScopePath);
+                            }
+                            Err(CreatePathError::EmptyPath) => {
+                                unreachable!();
+                            }
+                            Ok(table) => table
                         };
                         self.read_table(&mut table)?;
                     }
@@ -612,7 +643,7 @@ impl<'a> Parser<'a> {
                     top_table.insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, _) => {
-                    return Err(InvalidTableItem { pos: pos });
+                    return self.err(InvalidTableItem { pos: pos });
                 }
             }
         }

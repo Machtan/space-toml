@@ -1,6 +1,9 @@
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
 use debug;
+use std::result;
+use std::error;
+use std::fmt;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
 
@@ -27,6 +30,8 @@ pub struct Tokens<'a> {
     scope_stack: Vec<char>,
 }
 
+pub type Result<'a> = result::Result<(usize, Token<'a>), Error<'a>>;
+
 impl<'a> Tokens<'a> {
     fn new(text: &'a str) -> Tokens<'a> {
         Tokens {
@@ -37,6 +42,11 @@ impl<'a> Tokens<'a> {
             scope: LexerScope::Key,
             scope_stack: Vec::new(),
         }
+    }
+
+    /// Returns the text that is being parsed.
+    pub fn text(&self) -> &'a str {
+        self.text
     }
 
     /// Returns the line and cloumn of the tokenizer.
@@ -71,7 +81,7 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads as many whitespace characters as possible.
-    fn read_whitespace(&mut self) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_whitespace(&mut self) -> Result<'a> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -89,8 +99,13 @@ impl<'a> Tokens<'a> {
         Ok((start, Whitespace(&self.text[self.start..])))
     }
 
+    /// Returns an error with the given kind.
+    fn err(&self, kind: ErrorKind) -> Result<'a> {
+        Err(Error { text: self.text, kind: kind })
+    }
+
     /// Reads a plain key.
-    fn read_key(&mut self) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_key(&mut self) -> Result<'a> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -109,7 +124,7 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads a comment.
-    fn read_comment(&mut self) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_comment(&mut self) -> Result<'a> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -125,9 +140,9 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads a bracket.
-    fn read_bracket(&mut self, open: bool) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_bracket(&mut self, open: bool) -> Result<'a> {
         use self::Token::*;
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         let start = self.start;
         self.start += 1;
         // Only check for array of tables when in key scope
@@ -155,7 +170,7 @@ impl<'a> Tokens<'a> {
                 if self.scope_stack.is_empty() {
                     // println!("Error!");
                     self.finished = true;
-                    return Err(UnmatchedClosingBrace { pos: self.start - 1 });
+                    return self.err(UnmatchedClosingBrace { pos: self.start - 1 });
                 } else {
                     self.scope_stack.pop();
                     // println!("{:?}", self.scope_stack);
@@ -170,7 +185,7 @@ impl<'a> Tokens<'a> {
                 if self.scope_stack.is_empty() {
                     // println!("Error!");
                     self.finished = true;
-                    return Err(UnmatchedClosingBrace { pos: self.start - 1 });
+                    return self.err(UnmatchedClosingBrace { pos: self.start - 1 });
                 } else {
                     self.scope_stack.pop();
                     // println!("{:?}", self.scope_stack);
@@ -181,9 +196,9 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads a string.
-    fn read_string(&mut self, literal: bool) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_string(&mut self, literal: bool) -> Result<'a> {
         use self::Token::*;
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         let start = self.start;
         let mut escaped = false;
         let multiline = if !literal {
@@ -225,7 +240,7 @@ impl<'a> Tokens<'a> {
                     }));
                 }
             }
-            Err(UnclosedLiteral { start: self.start })
+            self.err(UnclosedLiteral { start: self.start })
         } else {
             while let Some((i, ch)) = self.chars.next() {
                 if !escaped {
@@ -258,7 +273,7 @@ impl<'a> Tokens<'a> {
                             if let Some((_, '\n')) = self.chars.next() {
                                 escaped = false;
                             } else {
-                                return Err(InvalidEscapeCharacter {
+                                return self.err(InvalidEscapeCharacter {
                                     start: self.start,
                                     pos: i,
                                 });
@@ -276,7 +291,7 @@ impl<'a> Tokens<'a> {
                                     match ch {
                                         '0'...'9' | 'a'...'f' | 'A'...'F' => {},
                                         _ => {
-                                            return Err(InvalidEscapeCharacter {
+                                            return self.err(InvalidEscapeCharacter {
                                                 start: self.start,
                                                 pos: i
                                             });
@@ -294,7 +309,7 @@ impl<'a> Tokens<'a> {
                                     match ch {
                                         '0'...'9' | 'a'...'f' | 'A'...'F' => {},
                                         _ => {
-                                            return Err(InvalidEscapeCharacter {
+                                            return self.err(InvalidEscapeCharacter {
                                                 start: self.start,
                                                 pos: i
                                             });
@@ -307,7 +322,7 @@ impl<'a> Tokens<'a> {
                             escaped = false;
                         }
                         _ => {
-                            return Err(InvalidEscapeCharacter {
+                            return self.err(InvalidEscapeCharacter {
                                 start: self.start,
                                 pos: i,
                             });
@@ -315,12 +330,12 @@ impl<'a> Tokens<'a> {
                     }
                 }
             }
-            Err(UnclosedString { start: self.start })
+            self.err(UnclosedString { start: self.start })
         }
     }
 
     // TODO: Don't do this as brokenly
-    fn read_datetime(&mut self) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_datetime(&mut self) -> Result<'a> {
         use self::Token::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
@@ -344,9 +359,9 @@ impl<'a> Tokens<'a> {
     fn read_int(&mut self,
                 mut was_number: bool,
                 mut datetime_possible: bool)
-                -> Result<(usize, Token<'a>), TokenError> {
+                -> Result<'a> {
         use self::Token::*;
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         let start = self.start;
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
@@ -375,7 +390,7 @@ impl<'a> Tokens<'a> {
                 }
                 '_' => {
                     self.finished = true;
-                    return Err(UnderscoreNotAfterNumber {
+                    return self.err(UnderscoreNotAfterNumber {
                         start: self.start,
                         pos: i,
                     });
@@ -386,7 +401,7 @@ impl<'a> Tokens<'a> {
                     return Ok((start, Int(part)));
                 }
                 _ => {
-                    return Err(InvalidIntCharacter {
+                    return self.err(InvalidIntCharacter {
                         start: self.start,
                         pos: i,
                     });
@@ -401,15 +416,15 @@ impl<'a> Tokens<'a> {
     fn read_float(&mut self,
                   mut exponent_found: bool,
                   mut was_number: bool)
-                  -> Result<(usize, Token<'a>), TokenError> {
+                  -> Result<'a> {
         use self::Token::*;
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         let start = self.start;
 
         while let Some(&(i, ch)) = self.chars.peek() {
             match ch {
                 'e' | 'E' if exponent_found => {
-                    return Err(InvalidFloatCharacter {
+                    return self.err(InvalidFloatCharacter {
                         start: self.start,
                         pos: i,
                     });
@@ -431,7 +446,7 @@ impl<'a> Tokens<'a> {
                 }
                 '_' => {
                     self.finished = true;
-                    return Err(UnderscoreNotAfterNumber {
+                    return self.err(UnderscoreNotAfterNumber {
                         start: self.start,
                         pos: i,
                     });
@@ -442,7 +457,7 @@ impl<'a> Tokens<'a> {
                     return Ok((start, Float(part)));
                 }
                 _ => {
-                    return Err(InvalidFloatCharacter {
+                    return self.err(InvalidFloatCharacter {
                         start: self.start,
                         pos: i,
                     });
@@ -454,9 +469,9 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads a value. (right hand of an assignment or part of an array).
-    fn read_value(&mut self, i: usize, ch: char) -> Result<(usize, Token<'a>), TokenError> {
+    fn read_value(&mut self, i: usize, ch: char) -> Result<'a> {
         use self::Token::*;
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         let start = self.start;
 
         match ch {
@@ -469,7 +484,7 @@ impl<'a> Tokens<'a> {
                     return Ok((start, Bool(true)));
                 }
                 self.finished = true;
-                Err(InvalidValueCharacter {
+                self.err(InvalidValueCharacter {
                     start: self.start,
                     pos: i,
                 })
@@ -483,7 +498,7 @@ impl<'a> Tokens<'a> {
                     return Ok((start, Bool(false)));
                 }
                 self.finished = true;
-                Err(InvalidValueCharacter {
+                self.err(InvalidValueCharacter {
                     start: self.start,
                     pos: i,
                 })
@@ -492,7 +507,7 @@ impl<'a> Tokens<'a> {
             '0'...'9' => self.read_int(true, true),
             _ => {
                 self.finished = true;
-                Err(InvalidValueCharacter {
+                self.err(InvalidValueCharacter {
                     start: self.start,
                     pos: i,
                 })
@@ -604,9 +619,9 @@ impl<'a> Token<'a> {
     }
 }
 
-/// An error found when tokenizing a TOML document.
+/// The different errors found when lexing a TOML document.
 #[derive(Debug, Clone)]
-pub enum TokenError {
+pub enum ErrorKind {
     /// The character at this position is not a valid whitespace character by the TOML definition.
     InvalidWhitespace {
         /// The byte index of the invalid character
@@ -669,71 +684,85 @@ pub enum TokenError {
     },
 }
 
-impl TokenError {
-    // TODO: implement error::Error.
-    /// Shows this error.
-    pub fn show(&self, text: &str) {
-        use self::TokenError::*;
-        match *self {
+/// An error found when lexing a TOML document.
+#[derive(Debug, Clone)]
+pub struct Error<'a> {
+    /// What kind of error this is.
+    pub kind: ErrorKind,
+    /// The text that was being parsed.
+    pub text: &'a str
+}
+
+impl<'a> fmt::Display for Error<'a> {
+    /// Writes a longer error message to the given output.
+    fn fmt(&self, output: &mut fmt::Formatter) -> fmt::Result {
+        use self::ErrorKind::*;
+        match self.kind {
             UnclosedString { start } => {
-                let (line, col) = debug::get_position(text, start);
-                println!("Unclosed string starting at {}:{} :", line, col);
-                debug::show_unclosed(text, start);
+                let (line, col) = debug::get_position(self.text, start);
+                write!(output, "Unclosed string starting at {}:{} :", line, col);
+                debug::write_unclosed(self.text, start, output)
             }
             UnclosedLiteral { start } => {
-                let (line, col) = debug::get_position(text, start);
-                println!("Unclosed string starting at {}:{} :", line, col);
-                debug::show_unclosed(text, start);
+                let (line, col) = debug::get_position(self.text, start);
+                write!(output, "Unclosed string starting at {}:{} :", line, col);
+                debug::write_unclosed(self.text, start, output)
             }
             InvalidEscapeCharacter { pos, .. } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid escape character at {}:{} :", line, col);
-                debug::show_invalid_character(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid escape character at {}:{} :", line, col);
+                debug::write_invalid_character(self.text, pos, output)
             }
             InvalidValueCharacter { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid character in value at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid character in value at {}:{} :", line, col);
+                debug::write_invalid_part(self.text, start, pos, output)
             }
             InvalidIntCharacter { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid character in integer at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid character in integer at {}:{} :", line, col);
+                debug::write_invalid_part(self.text, start, pos, output)
             }
             InvalidFloatCharacter { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid character in float at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid character in float at {}:{} :", line, col);
+                debug::write_invalid_part(self.text, start, pos, output)
             }
             UnmatchedClosingBrace { pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Unmatched brace found at {}:{} :", line, col);
-                debug::show_invalid_character(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Unmatched brace found at {}:{} :", line, col);
+                debug::write_invalid_character(self.text, pos, output)
             }
             InvalidKeyCharacter { pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid key character at {}:{} :", line, col);
-                debug::show_invalid_character(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid key character at {}:{} :", line, col);
+                debug::write_invalid_character(self.text, pos, output)
             }
             InvalidWhitespace { pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Invalid whitespace character at {}:{} :", line, col);
-                debug::show_invalid_character(text, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid whitespace character at {}:{} :", line, col);
+                debug::write_invalid_character(self.text, pos, output)
             }
             UnderscoreNotAfterNumber { start, pos } => {
-                let (line, col) = debug::get_position(text, pos);
-                println!("Underscore not after number at {}:{} :", line, col);
-                debug::show_invalid_part(text, start, pos);
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Underscore not after number at {}:{} :", line, col);
+                debug::write_invalid_part(self.text, start, pos, output)
             },
         }
     }
 }
 
+impl<'a> error::Error for Error<'a> {
+    fn description(&self) -> &str {
+        "A lexer error"
+    }
+}
+
 impl<'a> Iterator for Tokens<'a> {
-    type Item = Result<(usize, Token<'a>), TokenError>;
+    type Item = Result<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use self::TokenError::*;
+        use self::ErrorKind::*;
         use self::Token::*;
         let start = self.start;
 
@@ -764,7 +793,7 @@ impl<'a> Iterator for Tokens<'a> {
                 '}' => {
                     if self.scope_stack.is_empty() {
                         self.finished = true;
-                        return Some(Err(UnmatchedClosingBrace { pos: self.start - 1 }));
+                        return Some(self.err(UnmatchedClosingBrace { pos: self.start - 1 }));
                     } else {
                         self.scope_stack.pop();
                     }
@@ -784,7 +813,7 @@ impl<'a> Iterator for Tokens<'a> {
                         return Some(Ok((start, Newline(part))));
                     } else {
                         self.finished = true;
-                        return Some(Err(InvalidWhitespace { pos: i }));
+                        return Some(self.err(InvalidWhitespace { pos: i }));
                     }
                 }
                 '\n' => {
@@ -827,7 +856,7 @@ impl<'a> Iterator for Tokens<'a> {
                             match ch {
                                 'a'...'z' | 'A'...'Z' | '_' | '-' => return Some(self.read_key()),
                                 _ => {
-                                    return Some(Err(InvalidKeyCharacter { pos: i }));
+                                    return Some(self.err(InvalidKeyCharacter { pos: i }));
                                 }
                             }
                         }
