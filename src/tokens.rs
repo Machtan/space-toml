@@ -506,49 +506,59 @@ impl<'a> Tokens<'a> {
 pub enum Token<'a> {
     /// A sequence of TOML whitespace (space or tab characters).
     Whitespace(&'a str), 
-     /// [
+     /// `[`
     SingleBracketOpen,
-    /// [[
+    /// `[[`
     DoubleBracketOpen, 
-    /// ]
+    /// `]`
     SingleBracketClose, 
-    /// ]]
+    /// `]]`
     DoubleBracketClose, 
-    /// {
+    /// `{`
     CurlyOpen, 
-    /// }
+    /// `}`
     CurlyClose, 
-    /// # a TOML comment without a newline
+    /// `# a TOML comment without a newline`
     Comment(&'a str), 
-    /// =
+    /// `=`
     Equals, 
-    /// ,
+    /// `,`
     Comma, 
-    /// .
+    /// `.`
     Dot, 
-    /// A TOML newline sequence ("\r\n" or '\n', like in Rust)
+    /// A TOML newline sequence (`\r\n` or `\n`, like in Rust)
     Newline(&'a str), 
-    /// this = "An unquoted key"
+    /// `this = "An unquoted (or 'plain') key"`
     Key(&'a str), 
-    /// 'A quoted key' = ["Or a \t escaped string", 'a literal string', """Or the 
-    /// multiline variants""", '''] 
+    /// This can represent either a string value, or a quoted table key.
+    ///
     /// Keys are valid in any of the given string formats, in addition to the 'plain' 
     /// (unquoted) version.
+    /// 
+    /// ```toml
+    /// 'A quoted key' = [
+    ///     "Or a \t escaped string", 
+    ///     'a literal string', 
+    ///     """Or the 
+    ///     multiline variants""", 
+    ///     '''etc.''',
+    /// ]
+    /// ```
     String { 
         /// The text of the string. Escape characters have not been converted
         text: &'a str, 
-        /// Whether this is a 'literal' string (single-quoted, with no escape sequences)
+        /// Whether this is a `'literal'` string (single-quoted, with no escape sequences)
         literal: bool,
-        /// Whether this is a """multi-line string"""
+        /// Whether this is a `"""multi-line string"""`
         multiline: bool,
     },
     /// A datetime object. In space-toml this is just read as a string.
     DateTime(&'a str),
-    /// An integer, eg '5' or '-5'
+    /// An integer, eg `5` or `-5`
     Int(&'a str),
-    /// A floating-point number, eg '0.5' or '5e-5'
+    /// A floating-point number, eg `0.5` or `5e-5`
     Float(&'a str),
-    /// true | false
+    /// `true` or `false`
     Bool(bool),
 }
 

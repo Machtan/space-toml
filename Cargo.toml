@@ -1,6 +1,9 @@
 [package]
-authors = ["Machtan <jako3047@gmail.com>"]
 name = "space-toml"
 version = "0.1.0"
+authors = ["Jakob Lautrup Nysom <jako3047@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Edit TOML files while preserving all format information, including comments"
+keywords = ["toml", "TOML", "format", "edit", "nondestructive"]
 
 [dependencies]
