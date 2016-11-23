@@ -23,7 +23,12 @@ enum TableItem<'a> {
 #[derive(Debug)]
 pub enum CreatePathError {
     // TODO: Add data
+    /// A part of the requested path was not a Table, eg. looking for
+    /// 'settings.targets.bin', 'settings.targets' is an array instead of a table, 
+    /// so the path cannot be followed.
     InvalidScopeTable,
+    /// The given path is empty
+    EmptyPath,
 }
 
 /// A TOML table.
@@ -147,7 +152,8 @@ impl<'a> TomlTable<'a> {
     }
 
     // TODO: Better errors
-    /// Returns the table at the given path, potentially creating tables at all the path links.
+    /// Returns the table at the given path, creating intermediate tables if they don't 
+    /// exist, by using the supplied function.
     pub fn find_or_insert_with<I, P, F, T>(&mut self,
                                            path: P,
                                            default: F)
@@ -159,11 +165,14 @@ impl<'a> TomlTable<'a> {
     {
         let path: Vec<TomlKey<'a>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
-            return Err(CreatePathError::InvalidScopeTable);
+            return Err(CreatePathError::EmptyPath);
         }
         self.find_or_insert_with_slice(&path, default)
     }
 
+    /// Returns the table at the given path, creating intermediate tables if they don't 
+    /// exist. The intermediate tables are by default non-inlined. For a more custom 
+    /// version see 'find_or_insert_with'.
     pub fn find_or_insert_table<I, P>(&mut self,
                                       path: P)
                                       -> Result<&mut TomlTable<'a>, CreatePathError>
@@ -233,10 +242,13 @@ impl<'a> TomlTable<'a> {
         }
     }
 
+    /// Returns a reference to the value at the given key in this table, if present.
     pub fn get<K: Into<TomlKey<'a>>>(&self, key: K) -> Option<&TomlValue<'a>> {
         self.items.get(&key.into())
     }
 
+    /// Returns a mutable reference to the value at the given key in this table, if 
+    /// present.
     pub fn get_mut<K: Into<TomlKey<'a>>>(&mut self, key: K) -> Option<&mut TomlValue<'a>> {
         self.items.get_mut(&key.into())
     }

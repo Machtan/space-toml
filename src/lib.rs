@@ -1,5 +1,6 @@
-#![feature(question_mark)]
 #![feature(slice_patterns)]
+#![deny(missing_docs)]
+//! Parses and edits TOML documents while preserving the formatting of the original document.
 
 pub mod debug;
 

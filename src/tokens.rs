@@ -16,6 +16,7 @@ pub fn tokens(text: &str) -> Tokens {
     Tokens::new(text)
 }
 
+/// An iterator over the TOML tokens in a unicode text.
 #[derive(Debug)]
 pub struct Tokens<'a> {
     text: &'a str,
@@ -503,27 +504,51 @@ impl<'a> Tokens<'a> {
 /// A syntactical part of a document in the TOML format.
 #[derive(Debug, Clone, Copy)]
 pub enum Token<'a> {
-    Whitespace(&'a str),
+    /// A sequence of TOML whitespace (space or tab characters).
+    Whitespace(&'a str), 
+     /// [
     SingleBracketOpen,
-    DoubleBracketOpen,
-    SingleBracketClose,
-    DoubleBracketClose,
-    CurlyOpen,
-    CurlyClose,
-    Comment(&'a str),
-    Equals,
-    Comma,
-    Dot,
-    Newline(&'a str),
-    Key(&'a str), // Unquoted key
-    String {
-        text: &'a str,
+    /// [[
+    DoubleBracketOpen, 
+    /// ]
+    SingleBracketClose, 
+    /// ]]
+    DoubleBracketClose, 
+    /// {
+    CurlyOpen, 
+    /// }
+    CurlyClose, 
+    /// # a TOML comment without a newline
+    Comment(&'a str), 
+    /// =
+    Equals, 
+    /// ,
+    Comma, 
+    /// .
+    Dot, 
+    /// A TOML newline sequence ("\r\n" or '\n', like in Rust)
+    Newline(&'a str), 
+    /// this = "An unquoted key"
+    Key(&'a str), 
+    /// 'A quoted key' = ["Or a \t escaped string", 'a literal string', """Or the 
+    /// multiline variants""", '''] 
+    /// Keys are valid in any of the given string formats, in addition to the 'plain' 
+    /// (unquoted) version.
+    String { 
+        /// The text of the string. Escape characters have not been converted
+        text: &'a str, 
+        /// Whether this is a 'literal' string (single-quoted, with no escape sequences)
         literal: bool,
+        /// Whether this is a """multi-line string"""
         multiline: bool,
     },
+    /// A datetime object. In space-toml this is just read as a string.
     DateTime(&'a str),
+    /// An integer, eg '5' or '-5'
     Int(&'a str),
+    /// A floating-point number, eg '0.5' or '5e-5'
     Float(&'a str),
+    /// true | false
     Bool(bool),
 }
 
@@ -574,47 +599,62 @@ impl<'a> Token<'a> {
 pub enum TokenError {
     /// The character at this position is not a valid whitespace character by the TOML definition.
     InvalidWhitespace {
-        pos: usize,
+        /// The byte index of the invalid character
+        pos: usize, 
     },
     /// A literal string starting here was not closed.
     UnclosedLiteral {
-        start: usize,
+        /// The byte index where the string literal started (')
+        start: usize, 
     },
     /// A regular string starting here was not closed.
     UnclosedString {
-        start: usize,
+        /// The byte index where the string started (")
+        start: usize, 
     },
     /// A closing brace was found outside an open scope.
     UnmatchedClosingBrace {
-        pos: usize,
+        /// The byte index where the brace was found (])
+        pos: usize, 
     },
     /// A character that isn't valid for a key was found inside one.
     InvalidKeyCharacter {
-        pos: usize,
+        /// The byte index of the invalid character
+        pos: usize, 
     },
     /// A character that isn't valid in a value was found inside one.
     InvalidValueCharacter {
-        start: usize,
+        /// The byte index where the value starts (eg, the start of the array/inline table)
+        start: usize, 
+        /// The byte index where the invalid token starts
         pos: usize,
     },
     /// A character that isn't valid for an integer was found inside one.
     InvalidIntCharacter {
+        /// The byte index where the integer starts
         start: usize,
+        /// The byte index at which the invalid character was found
         pos: usize,
     },
     /// This escaped character in a regular string does not denote a valid escape sequence.
     InvalidEscapeCharacter {
+        /// The byte index where the string starts (")
         start: usize,
+        /// The byte index of the invalid escape character (after the backslash)
         pos: usize,
     },
     /// A character that isn't valid for a floating point number was found inside one.
     InvalidFloatCharacter {
+        /// The byte index of the float
         start: usize,
+        /// The byte index of the invalid character
         pos: usize,
     },
     /// An underscore in an integer value was found at an invalid position.
     UnderscoreNotAfterNumber {
+        /// The byte index of the integer
         start: usize,
+        /// The byte index of the invalid underscore
         pos: usize,
     },
 }

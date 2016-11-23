@@ -83,13 +83,19 @@ impl<'a> TomlInt<'a> {
 /// A value in the TOML system.
 #[derive(Debug)]
 pub enum TomlValue<'a> {
+    /// A string value
     String(TomlString<'a>),
+    /// A boolean value
     Bool(bool),
+    /// An integer
     Int(TomlInt<'a>),
+    /// A floating-point number
     Float(TomlFloat<'a>),
     /// This is not validated and just given as a string. Use at your own risk.
     DateTime(&'a str),
+    /// A table, regular or inlined
     Table(TomlTable<'a>),
+    /// An array of values or tables
     Array(TomlArray<'a>),
 }
 

@@ -22,68 +22,93 @@ pub enum ParseError {
     TokenError(TokenError),
     /// A part of this table or table array scope is invalid.
     InvalidScope {
+        /// The byte index of the scope ([)
         start: usize,
+        /// The byte index of the invalid part/token
         pos: usize,
     },
     /// The scope starting here wasn't completed.
     UnfinishedScope {
+        /// The byte index of the scope
         start: usize,
     },
     /// The item starting here wasn't completed.
     UnfinishedItem {
+        /// The byte index of the item
         start: usize,
     },
     /// The value starting here wasn't finished.
     UnfinishedValue {
+        /// The byte index of the value
         start: usize,
     },
     /// This doesn't represent a valid TOML value.
     InvalidValue {
+        /// The byte index of the start of the value (an array or an inline table)
         start: usize,
+        /// The byte index of the invalid TOML expression
         pos: usize,
     },
     /// An equals sign was expected after a key.
     MissingEquals {
+        /// The byte index of the key
         start: usize,
+        /// The byte index at which something different than an equals sign was found
         pos: usize,
     },
     /// A value is missing between two commas in an array.
     DoubleCommaInArray {
+        /// The byte index of the array ([)
         start: usize,
+        /// The byte index of the second comma
         pos: usize,
     },
     /// A comma is missing between two values in an array.
     MissingComma {
+        /// The byte index of the array ([)
         start: usize,
+        /// The byte index of the value found where a comma was expected
         pos: usize,
     },
     /// This isn't a valid item inside a table.
     InvalidTableItem {
+        /// The byte index of the item
         pos: usize,
     },
     // TODO: Support this!
     /// This table was defined twice
     TableDefinedTwice {
+        /// The byte index of the second definition
         pos: usize,
+        /// The byte index of the original definition
         original: usize,
     },
     /// This key path was defined twice.
     KeyDefinedTwice {
+        /// The byte index of the second definition
         pos: usize,
+        /// The byte index of the original definition
         original: usize,
     },
     /// This path is invalid (?).
     InvalidScopePath,
     /// A comma was found before any values.
     NonFinalComma {
+        /// The byte index of the comma.
         pos: usize,
     },
+    /// A value type that isn't of the same type as the previous array elements was found
+    /// (TOML arrays are homogenous).
     WrongValueTypeInArray {
+        /// The byte index of the array ([)
         start: usize,
+        /// The byte index of the invalid value
         pos: usize,
     },
 }
 impl ParseError {
+    // TODO: Implement error instead
+    /// Prints a nice error message.
     pub fn show(&self, text: &str) {
         use self::ParseError::*;
         match *self {
@@ -573,18 +598,16 @@ impl<'a> Parser<'a> {
                 (_, Comment(text)) => {
                     top_table.push_comment(text);
                 }
-                (pos, Key(_)) |
-                (pos, String { .. }) => {
-                    let key = if let Key(text) = res?.1 {
-                        TomlKey::Plain(text)
-                    } else if let String { text, literal, multiline } = res?.1 {
-                        TomlKey::String {
-                            text: text,
-                            literal: literal,
-                            multiline: multiline,
-                        }
-                    } else {
-                        unreachable!();
+                (pos, Key(text)) => {
+                    let key = TomlKey::Plain(text);
+                    let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
+                    top_table.insert_spaced(key, value, before_eq, after_eq);
+                }
+                (pos, String { text, literal, multiline }) => {
+                    let key = TomlKey::String {
+                        text: text,
+                        literal: literal,
+                        multiline: multiline,
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
                     top_table.insert_spaced(key, value, before_eq, after_eq);
