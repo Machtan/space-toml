@@ -18,6 +18,15 @@ enum TableItem<'a> {
     /// For inline tables
     Comma,
 }
+impl<'a> TableItem<'a> {
+    fn is_newline(&self) -> bool {
+        if let &TableItem::Newline(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// An error found when creating a new table from a given key path.
 #[derive(Debug)]
@@ -336,6 +345,16 @@ impl<'a> TomlTable<'a> {
         }
     }
 
+    /// Ensures that there is a newline before the first key/value pair
+    fn ensure_newline_after_scope(&mut self) {
+        if self.inline {
+            return;
+        }
+        if ! self.order.iter().any(|item| item.is_newline()) {
+            self.push_newline(false); // TODO: Add CR on windows?
+        }
+    }
+
     /// Inserts a new item into the table.
     /// Note: This function attempts to be smart with the formatting.
     pub fn insert<K, V>(&mut self, key: K, value: V)
@@ -349,6 +368,7 @@ impl<'a> TomlTable<'a> {
             self.items.insert(key, value);
         } else {
             if !self.inline {
+                self.ensure_newline_after_scope();
                 let entry = Entry {
                     key: key,
                     before_eq: " ",
@@ -365,16 +385,19 @@ impl<'a> TomlTable<'a> {
                 self.push_before_space(values);
             } else {
                 let had_comma = self.has_trailing_comma();
-                if !had_comma {
-                    self.order.push(Comma);
-                    self.order.push(Space(" "));
-                } else if !self.order.is_empty() {
-                    // Pad with space
-                    let last = self.order.len() - 1;
-                    if let Comma = self.order[last] {
+                if !self.items.is_empty() {
+                    if !had_comma {
+                        self.order.push(Comma);
                         self.order.push(Space(" "));
+                    } else if !self.order.is_empty() {
+                        // Pad with space
+                        let last = self.order.len() - 1;
+                        if let Comma = self.order[last] {
+                            self.order.push(Space(" "));
+                        }
                     }
                 }
+                
                 self.insert_spaced(key, value, Some(" "), Some(" "));
                 if had_comma {
                     self.order.push(Comma);
