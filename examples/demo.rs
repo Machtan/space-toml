@@ -1,6 +1,6 @@
 extern crate space_toml;
 
-use space_toml::{TomlTable};
+use space_toml::{Table};
 
 fn main() {
     println!("T O M L !");
@@ -40,7 +40,7 @@ fn main() {
             assert_eq!(simple, &out);
             println!("Parsed table written and validated!");
             
-            table.find_or_insert_with(&["hello"], || TomlTable::new_regular())
+            table.find_or_insert_with(&["hello"], || Table::new_regular())
                 .expect("Could not find table 'hello'")
                 .table_mut()
                 .unwrap()
