@@ -101,11 +101,11 @@ impl<'a> Tokens<'a> {
                 _ => {
                     let part = &self.text[self.start..i];
                     self.start = i;
-                    return Ok((start, Key(part)));
+                    return Ok((start, PlainKey(part)));
                 }
             }
         }
-        Ok((start, Key(&self.text[self.start..])))
+        Ok((start, PlainKey(&self.text[self.start..])))
     }
 
     /// Reads a comment.
@@ -529,7 +529,7 @@ pub enum Token<'a> {
     /// A TOML newline sequence (`\r\n` or `\n`, like in Rust)
     Newline(&'a str), 
     /// `this = "An unquoted (or 'plain') key"`
-    Key(&'a str), 
+    PlainKey(&'a str), 
     /// This can represent either a string value, or a quoted table key.
     ///
     /// Keys are valid in any of the given string formats, in addition to the 'plain' 
@@ -567,7 +567,7 @@ impl<'a> Token<'a> {
     pub fn write(&self, out: &mut String) {
         use self::Token::*;
         match *self {
-            Whitespace(s) | Newline(s) | Key(s) | DateTime(s) | Int(s) | Float(s) => {
+            Whitespace(s) | Newline(s) | PlainKey(s) | DateTime(s) | Int(s) | Float(s) => {
                 out.push_str(s)
             }
             Comment(s) => {

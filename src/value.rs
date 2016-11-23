@@ -1,7 +1,7 @@
 
 use std::borrow::{Borrow, Cow};
-use table::TomlTable;
-use array::TomlArray;
+use table::Table;
+use array::Array;
 use utils::{write_string, escape_string, clean_string};
 
 /// A TOML string value.
@@ -46,14 +46,14 @@ impl<'a> TomlString<'a> {
 /// A TOML float value.
 /// 2.34.
 #[derive(Debug)]
-pub enum TomlFloat<'a> {
+pub enum Float<'a> {
     Text(&'a str),
     Value(f64),
 }
 
-impl<'a> TomlFloat<'a> {
+impl<'a> Float<'a> {
     fn value(&self) -> f64 {
-        use self::TomlFloat::*;
+        use self::Float::*;
         match *self {
             Text(text) => text.parse().expect("Unparseable TOML float"),
             Value(value) => value,
@@ -64,14 +64,14 @@ impl<'a> TomlFloat<'a> {
 /// A TOML integer value.
 /// `3` `32_000`.
 #[derive(Debug)]
-pub enum TomlInt<'a> {
+pub enum Int<'a> {
     Text(&'a str),
     Value(i64),
 }
 
-impl<'a> TomlInt<'a> {
+impl<'a> Int<'a> {
     fn value(&self) -> i64 {
-        use self::TomlInt::*;
+        use self::Int::*;
         match *self {
             Text(text) => text.parse().expect("Unparseable TOML float"),
             Value(value) => value,
@@ -82,63 +82,63 @@ impl<'a> TomlInt<'a> {
 
 /// A value in the TOML system.
 #[derive(Debug)]
-pub enum TomlValue<'a> {
+pub enum Value<'a> {
     /// A string value
     String(TomlString<'a>),
     /// A boolean value
     Bool(bool),
     /// An integer
-    Int(TomlInt<'a>),
+    Int(Int<'a>),
     /// A floating-point number
-    Float(TomlFloat<'a>),
+    Float(Float<'a>),
     /// This is not validated and just given as a string. Use at your own risk.
     DateTime(&'a str),
     /// A table, regular or inlined
-    Table(TomlTable<'a>),
+    Table(Table<'a>),
     /// An array of values or tables
-    Array(TomlArray<'a>),
+    Array(Array<'a>),
 }
 
-/// A protected interface for `TomlValue`.
-pub trait TomlValuePrivate<'a> {
-    fn new_int(text: &'a str) -> TomlValue<'a>;
-    fn new_bool(value: bool) -> TomlValue<'a>;
-    fn new_string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a>;
-    fn new_float(text: &'a str) -> TomlValue<'a>;
-    fn new_datetime(text: &'a str) -> TomlValue<'a>;
+/// A protected interface for `Value`.
+pub trait ValuePrivate<'a> {
+    fn new_int(text: &'a str) -> Value<'a>;
+    fn new_bool(value: bool) -> Value<'a>;
+    fn new_string(text: &'a str, literal: bool, multiline: bool) -> Value<'a>;
+    fn new_float(text: &'a str) -> Value<'a>;
+    fn new_datetime(text: &'a str) -> Value<'a>;
 }
 
-impl<'a> TomlValuePrivate<'a> for TomlValue<'a> {
+impl<'a> ValuePrivate<'a> for Value<'a> {
     /// Wraps a new integer.
-    fn new_int(text: &'a str) -> TomlValue<'a> {
-        TomlValue::Int(TomlInt::Text(text))
+    fn new_int(text: &'a str) -> Value<'a> {
+        Value::Int(Int::Text(text))
     }
 
     /// Wraps a new bool.
-    fn new_bool(value: bool) -> TomlValue<'a> {
-        TomlValue::Bool(value)
+    fn new_bool(value: bool) -> Value<'a> {
+        Value::Bool(value)
     }
 
     /// Wraps a new string.
-    fn new_string(text: &'a str, literal: bool, multiline: bool) -> TomlValue<'a> {
-        TomlValue::String(TomlString::new(text, literal, multiline))
+    fn new_string(text: &'a str, literal: bool, multiline: bool) -> Value<'a> {
+        Value::String(TomlString::new(text, literal, multiline))
     }
 
     /// Wraps a new float.
-    fn new_float(text: &'a str) -> TomlValue<'a> {
-        TomlValue::Float(TomlFloat::Text(text))
+    fn new_float(text: &'a str) -> Value<'a> {
+        Value::Float(Float::Text(text))
     }
 
     /// Wraps a new datetime.
-    fn new_datetime(text: &'a str) -> TomlValue<'a> {
-        TomlValue::DateTime(text)
+    fn new_datetime(text: &'a str) -> Value<'a> {
+        Value::DateTime(text)
     }
 }
 
-impl<'a> TomlValue<'a> {
+impl<'a> Value<'a> {
     /// Checks whether this value has the same variant as the given value.
-    pub fn is_same_type(&self, other: &TomlValue) -> bool {
-        use self::TomlValue::*;
+    pub fn is_same_type(&self, other: &Value) -> bool {
+        use self::Value::*;
         match (self, other) {
             (&String(_), &String(_)) => true,
             (&Bool(_), &Bool(_)) => true,
@@ -151,8 +151,8 @@ impl<'a> TomlValue<'a> {
     }
 
     /// Returns a reference to the table in this item (if valid).
-    pub fn table(&self) -> Option<&TomlTable<'a>> {
-        if let TomlValue::Table(ref table) = *self {
+    pub fn table(&self) -> Option<&Table<'a>> {
+        if let Value::Table(ref table) = *self {
             Some(table)
         } else {
             None
@@ -160,8 +160,8 @@ impl<'a> TomlValue<'a> {
     }
 
     /// Returns a mutable reference to the table in this item (if valid).
-    pub fn table_mut(&mut self) -> Option<&mut TomlTable<'a>> {
-        if let TomlValue::Table(ref mut table) = *self {
+    pub fn table_mut(&mut self) -> Option<&mut Table<'a>> {
+        if let Value::Table(ref mut table) = *self {
             Some(table)
         } else {
             None
@@ -169,8 +169,8 @@ impl<'a> TomlValue<'a> {
     }
 
     /// Returns a mutable reference to the array in this item (if valid).
-    pub fn array_mut(&mut self) -> Option<&mut TomlArray<'a>> {
-        if let TomlValue::Array(ref mut array) = *self {
+    pub fn array_mut(&mut self) -> Option<&mut Array<'a>> {
+        if let Value::Array(ref mut array) = *self {
             Some(array)
         } else {
             None
@@ -178,8 +178,8 @@ impl<'a> TomlValue<'a> {
     }
 
     /// Returns reference to the array in this item (if valid).
-    pub fn array(&mut self) -> Option<&TomlArray<'a>> {
-        if let TomlValue::Array(ref mut array) = *self {
+    pub fn array(&mut self) -> Option<&Array<'a>> {
+        if let Value::Array(ref mut array) = *self {
             Some(array)
         } else {
             None
@@ -188,7 +188,7 @@ impl<'a> TomlValue<'a> {
 
     /// Returns the string value of this item (if valid).
     pub fn string(&self) -> Option<Cow<'a, str>> {
-        if let TomlValue::String(ref string) = *self {
+        if let Value::String(ref string) = *self {
             Some(string.clean())
         } else {
             None
@@ -197,7 +197,7 @@ impl<'a> TomlValue<'a> {
 
     /// Returns the boolean value of this item (if valid).
     pub fn bool(&self) -> Option<bool> {
-        if let TomlValue::Bool(value) = *self {
+        if let Value::Bool(value) = *self {
             Some(value)
         } else {
             None
@@ -206,7 +206,7 @@ impl<'a> TomlValue<'a> {
 
     /// Returns the integer value of this item (if valid).
     pub fn int(&self) -> Option<i64> {
-        if let TomlValue::Int(ref int) = *self {
+        if let Value::Int(ref int) = *self {
             Some(int.value())
         } else {
             None
@@ -215,7 +215,7 @@ impl<'a> TomlValue<'a> {
 
     /// Returns the float value of this item (if valid).
     pub fn float(&self) -> Option<f64> {
-        if let TomlValue::Float(ref float) = *self {
+        if let Value::Float(ref float) = *self {
             Some(float.value())
         } else {
             None
@@ -224,7 +224,7 @@ impl<'a> TomlValue<'a> {
 
     /// Returns the datetime value of this item (if valid).
     pub fn datetime(&self) -> Option<&'a str> {
-        if let TomlValue::DateTime(value) = *self {
+        if let Value::DateTime(value) = *self {
             Some(value)
         } else {
             None
@@ -233,16 +233,16 @@ impl<'a> TomlValue<'a> {
 
     // String(TomlString<'a>),
     // Bool(bool),
-    // Int(TomlInt<'a>),
-    // Float(TomlFloat<'a>),
+    // Int(Int<'a>),
+    // Float(Float<'a>),
     // This is not validated and just given as a string. Use at your own risk.
     // DateTime(&'a str),
-    // Table(TomlTable<'a>),
-    // Array(TomlArray<'a>),
+    // Table(Table<'a>),
+    // Array(Array<'a>),
 
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
-        use self::TomlValue::*;
+        use self::Value::*;
         match *self {
             String(TomlString::Text { text, literal, multiline }) => {
                 write_string(text, literal, multiline, out);
@@ -257,67 +257,67 @@ impl<'a> TomlValue<'a> {
                     "false"
                 })
             }
-            Int(TomlInt::Text(text)) => out.push_str(text),
             DateTime(text) => out.push_str(text),
-            Int(TomlInt::Value(v)) => out.push_str(&format!("{}", v)),
-            Float(TomlFloat::Text(text)) => out.push_str(text),
-            Float(TomlFloat::Value(v)) => out.push_str(&format!("{}", v)),
+            Int(self::Int::Text(text)) => out.push_str(text),
+            Int(self::Int::Value(v)) => out.push_str(&format!("{}", v)),
+            Float(self::Float::Text(text)) => out.push_str(text),
+            Float(self::Float::Value(v)) => out.push_str(&format!("{}", v)),
             Table(ref table) => table.write(out),
             Array(ref array) => array.write(out),
         }
     }
 }
 
-impl<'a> From<&'a str> for TomlValue<'a> {
-    fn from(other: &'a str) -> TomlValue<'a> {
-        TomlValue::String(TomlString::from_user(other))
+impl<'a> From<&'a str> for Value<'a> {
+    fn from(other: &'a str) -> Value<'a> {
+        Value::String(TomlString::from_user(other))
     }
 }
 
-impl<'a> From<Cow<'a, str>> for TomlValue<'a> {
-    fn from(other: Cow<'a, str>) -> TomlValue<'a> {
-        TomlValue::String(TomlString::from_user(other))
+impl<'a> From<Cow<'a, str>> for Value<'a> {
+    fn from(other: Cow<'a, str>) -> Value<'a> {
+        Value::String(TomlString::from_user(other))
     }
 }
 
-impl<'a> From<String> for TomlValue<'a> {
-    fn from(other: String) -> TomlValue<'a> {
-        TomlValue::String(TomlString::from_user(other))
+impl<'a> From<String> for Value<'a> {
+    fn from(other: String) -> Value<'a> {
+        Value::String(TomlString::from_user(other))
     }
 }
 
-impl<'a> From<TomlTable<'a>> for TomlValue<'a> {
-    fn from(other: TomlTable<'a>) -> TomlValue<'a> {
-        TomlValue::Table(other)
+impl<'a> From<Table<'a>> for Value<'a> {
+    fn from(other: Table<'a>) -> Value<'a> {
+        Value::Table(other)
     }
 }
 
-impl<'a> From<i64> for TomlValue<'a> {
-    fn from(other: i64) -> TomlValue<'a> {
-        TomlValue::Int(TomlInt::Value(other))
+impl<'a> From<i64> for Value<'a> {
+    fn from(other: i64) -> Value<'a> {
+        Value::Int(Int::Value(other))
     }
 }
 
-impl<'a> From<i32> for TomlValue<'a> {
-    fn from(other: i32) -> TomlValue<'a> {
-        TomlValue::Int(TomlInt::Value(other as i64))
+impl<'a> From<i32> for Value<'a> {
+    fn from(other: i32) -> Value<'a> {
+        Value::Int(Int::Value(other as i64))
     }
 }
 
-impl<'a> From<f32> for TomlValue<'a> {
-    fn from(other: f32) -> TomlValue<'a> {
-        TomlValue::Float(TomlFloat::Value(other as f64))
+impl<'a> From<f32> for Value<'a> {
+    fn from(other: f32) -> Value<'a> {
+        Value::Float(Float::Value(other as f64))
     }
 }
 
-impl<'a> From<f64> for TomlValue<'a> {
-    fn from(other: f64) -> TomlValue<'a> {
-        TomlValue::Float(TomlFloat::Value(other))
+impl<'a> From<f64> for Value<'a> {
+    fn from(other: f64) -> Value<'a> {
+        Value::Float(Float::Value(other))
     }
 }
 
-impl<'a> From<TomlArray<'a>> for TomlValue<'a> {
-    fn from(other: TomlArray<'a>) -> TomlValue<'a> {
-        TomlValue::Array(other)
+impl<'a> From<Array<'a>> for Value<'a> {
+    fn from(other: Array<'a>) -> Value<'a> {
+        Value::Array(other)
     }
 }

@@ -1,6 +1,6 @@
 
-use key::TomlKey;
-use value::TomlValue;
+use key::Key;
+use value::Value;
 use scope::Scope;
 use std::collections::{HashMap, hash_map};
 
@@ -11,7 +11,7 @@ enum TableItem<'a> {
     Newline(&'a str),
     Comment(&'a str),
     Entry {
-        key: TomlKey<'a>,
+        key: Key<'a>,
         before_eq: &'a str,
         after_eq: &'a str,
     },
@@ -42,28 +42,28 @@ pub enum CreatePathError {
 
 /// A TOML table.
 #[derive(Debug)]
-pub struct TomlTable<'a> {
+pub struct Table<'a> {
     inline: bool,
     order: Vec<TableItem<'a>>,
-    items: HashMap<TomlKey<'a>, TomlValue<'a>>,
+    items: HashMap<Key<'a>, Value<'a>>,
     visual_scopes: Vec<Scope<'a>>,
 }
 
 /// A protected interface for a the TOML table.
-pub trait TomlTablePrivate<'a> {
+pub trait TablePrivate<'a> {
     fn push_space(&mut self, space: &'a str);
     fn push_comma(&mut self);
     fn push_newline(&mut self, cr: bool);
     fn push_comment(&mut self, comment: &'a str);
     fn push_scope(&mut self, scope: Scope<'a>);
-    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self,
+    fn insert_spaced<K: Into<Key<'a>>>(&mut self,
                                            key: K,
-                                           value: TomlValue<'a>,
+                                           value: Value<'a>,
                                            before_eq: Option<&'a str>,
                                            after_eq: Option<&'a str>);
 }
 
-impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
+impl<'a> TablePrivate<'a> for Table<'a> {
     /// Pushes a space to the format order.
     fn push_space(&mut self, space: &'a str) {
         self.order.push(TableItem::Space(space));
@@ -98,9 +98,9 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
     }
 
     /// Inserts the given key as an entry to the table with the given sapce.
-    fn insert_spaced<K: Into<TomlKey<'a>>>(&mut self,
+    fn insert_spaced<K: Into<Key<'a>>>(&mut self,
                                            key: K,
-                                           value: TomlValue<'a>,
+                                           value: Value<'a>,
                                            before_eq: Option<&'a str>,
                                            after_eq: Option<&'a str>) {
         let key = key.into();
@@ -114,10 +114,10 @@ impl<'a> TomlTablePrivate<'a> for TomlTable<'a> {
     }
 }
 
-impl<'a> TomlTable<'a> {
+impl<'a> Table<'a> {
     /// Creates a new table.
-    fn new(inline: bool) -> TomlTable<'a> {
-        TomlTable {
+    fn new(inline: bool) -> Table<'a> {
+        Table {
             inline: inline,
             order: Vec::new(),
             items: HashMap::new(),
@@ -126,29 +126,29 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Creates a new regular TOML table.
-    pub fn new_regular() -> TomlTable<'a> {
-        TomlTable::new(false)
+    pub fn new_regular() -> Table<'a> {
+        Table::new(false)
     }
 
     /// Creates a new inline TOML table.
-    pub fn new_inline() -> TomlTable<'a> {
-        TomlTable::new(true)
+    pub fn new_inline() -> Table<'a> {
+        Table::new(true)
     }
 
     fn find_or_insert_with_slice<F, T>(&mut self,
-                                       path: &[TomlKey<'a>],
+                                       path: &[Key<'a>],
                                        default: F)
-                                       -> Result<&mut TomlValue<'a>, CreatePathError>
+                                       -> Result<&mut Value<'a>, CreatePathError>
         where F: FnOnce() -> T,
-              T: Into<TomlValue<'a>>
+              T: Into<Value<'a>>
     {
         match *path {
             [key] => Ok(self.items.entry(key).or_insert_with(|| default().into())),
             [key, _..] => {
                 match *self.items
                     .entry(key)
-                    .or_insert_with(|| TomlValue::Table(TomlTable::new(false))) {
-                    TomlValue::Table(ref mut table) => {
+                    .or_insert_with(|| Value::Table(Table::new(false))) {
+                    Value::Table(ref mut table) => {
                         table.find_or_insert_with_slice(&path[1..], default)
                     }
                     _ => Err(CreatePathError::InvalidScopeTable),
@@ -166,13 +166,13 @@ impl<'a> TomlTable<'a> {
     pub fn find_or_insert_with<I, P, F, T>(&mut self,
                                            path: P,
                                            default: F)
-                                           -> Result<&mut TomlValue<'a>, CreatePathError>
+                                           -> Result<&mut Value<'a>, CreatePathError>
         where P: IntoIterator<Item = I>,
-              I: Into<TomlKey<'a>>,
+              I: Into<Key<'a>>,
               F: FnOnce() -> T,
-              T: Into<TomlValue<'a>>
+              T: Into<Value<'a>>
     {
-        let path: Vec<TomlKey<'a>> = path.into_iter().map(|k| k.into()).collect();
+        let path: Vec<Key<'a>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::EmptyPath);
         }
@@ -184,24 +184,24 @@ impl<'a> TomlTable<'a> {
     /// version see 'find_or_insert_with'.
     pub fn find_or_insert_table<I, P>(&mut self,
                                       path: P)
-                                      -> Result<&mut TomlTable<'a>, CreatePathError>
+                                      -> Result<&mut Table<'a>, CreatePathError>
         where P: IntoIterator<Item = I>,
-              I: Into<TomlKey<'a>>
+              I: Into<Key<'a>>
     {
-        let path: Vec<TomlKey<'a>> = path.into_iter().map(|k| k.into()).collect();
+        let path: Vec<Key<'a>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::InvalidScopeTable);
         }
         let value =
-            self.find_or_insert_with_slice(&path, || TomlValue::Table(TomlTable::new(false)))?;
+            self.find_or_insert_with_slice(&path, || Value::Table(Table::new(false)))?;
         match *value {
-            TomlValue::Table(ref mut table) => Ok(table),
+            Value::Table(ref mut table) => Ok(table),
             _ => unreachable!(),
         }
     }
 
     /// Attempts to find a value at the given path in the table.
-    pub fn find(&self, path: &[TomlKey<'a>]) -> Option<&TomlValue<'a>> {
+    pub fn find(&self, path: &[Key<'a>]) -> Option<&Value<'a>> {
         if path.is_empty() {
             None
         } else if path.len() == 1 {
@@ -211,7 +211,7 @@ impl<'a> TomlTable<'a> {
             let rest = &path[1..];
 
             match self.items.get(first) {
-                Some(&TomlValue::Table(ref table)) => table.find(rest),
+                Some(&Value::Table(ref table)) => table.find(rest),
                 Some(_) => {
                     // TODO: Return an error here
                     None
@@ -222,7 +222,7 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Attempts to find a value at the given path in the table.
-    pub fn find_mut(&mut self, path: &[TomlKey<'a>]) -> Option<&mut TomlValue<'a>> {
+    pub fn find_mut(&mut self, path: &[Key<'a>]) -> Option<&mut Value<'a>> {
         if path.is_empty() {
             None
         } else if path.len() == 1 {
@@ -232,7 +232,7 @@ impl<'a> TomlTable<'a> {
             let rest = &path[1..];
 
             match self.items.get_mut(first) {
-                Some(&mut TomlValue::Table(ref mut table)) => table.find_mut(rest),
+                Some(&mut Value::Table(ref mut table)) => table.find_mut(rest),
                 Some(_) => {
                     // TODO: Return an error here
                     None
@@ -243,7 +243,7 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Unimplemented.
-    pub fn find_or_create_array_table(&mut self, path: &[TomlKey<'a>]) -> &mut TomlTable<'a> {
+    pub fn find_or_create_array_table(&mut self, path: &[Key<'a>]) -> &mut Table<'a> {
         if path.is_empty() {
             self
         } else {
@@ -252,13 +252,13 @@ impl<'a> TomlTable<'a> {
     }
 
     /// Returns a reference to the value at the given key in this table, if present.
-    pub fn get<K: Into<TomlKey<'a>>>(&self, key: K) -> Option<&TomlValue<'a>> {
+    pub fn get<K: Into<Key<'a>>>(&self, key: K) -> Option<&Value<'a>> {
         self.items.get(&key.into())
     }
 
     /// Returns a mutable reference to the value at the given key in this table, if 
     /// present.
-    pub fn get_mut<K: Into<TomlKey<'a>>>(&mut self, key: K) -> Option<&mut TomlValue<'a>> {
+    pub fn get_mut<K: Into<Key<'a>>>(&mut self, key: K) -> Option<&mut Value<'a>> {
         self.items.get_mut(&key.into())
     }
 
@@ -311,12 +311,12 @@ impl<'a> TomlTable<'a> {
     }
     
     /// Iterates over the keys and values in the table.
-    pub fn iter(&self) -> hash_map::Iter<TomlKey<'a>, TomlValue<'a>> {
+    pub fn iter(&self) -> hash_map::Iter<Key<'a>, Value<'a>> {
         self.items.iter()
     }
     
     /// Iterates mutably over the keys and values in the table.
-    pub fn iter_mut(&mut self) -> hash_map::IterMut<TomlKey<'a>, TomlValue<'a>> {
+    pub fn iter_mut(&mut self) -> hash_map::IterMut<Key<'a>, Value<'a>> {
         self.items.iter_mut()
     }
 
@@ -358,8 +358,8 @@ impl<'a> TomlTable<'a> {
     /// Inserts a new item into the table.
     /// Note: This function attempts to be smart with the formatting.
     pub fn insert<K, V>(&mut self, key: K, value: V)
-        where K: Into<TomlKey<'a>>,
-              V: Into<TomlValue<'a>>
+        where K: Into<Key<'a>>,
+              V: Into<Value<'a>>
     {
         use self::TableItem::*;
         let key = key.into();

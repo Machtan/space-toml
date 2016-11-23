@@ -1,5 +1,5 @@
 
-use key::TomlKey;
+use key::Key;
 
 /// A format item for a TOML scope (table or array of tables).
 #[derive(Debug, Clone)]
@@ -14,7 +14,7 @@ enum ScopeItem<'a> {
 #[derive(Debug, Clone)]
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
-    keys: Vec<TomlKey<'a>>,
+    keys: Vec<Key<'a>>,
 }
 
 impl<'a> Scope<'a> {
@@ -37,14 +37,14 @@ impl<'a> Scope<'a> {
     }
 
     /// Pushes a key to the scope format order.
-    pub fn push_key(&mut self, key: TomlKey<'a>) {
+    pub fn push_key(&mut self, key: Key<'a>) {
         let new_index = self.keys.len();
         self.keys.push(key);
         self.ordering.push(ScopeItem::Part(new_index));
     }
 
     /// Returns a reference to the path this scope describes.
-    pub fn path(&self) -> &Vec<TomlKey<'a>> {
+    pub fn path(&self) -> &Vec<Key<'a>> {
         &self.keys
     }
 

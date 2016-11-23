@@ -7,7 +7,7 @@ use utils::{write_string, create_key, clean_string};
 /// `key = "something"`
 /// `[ key. other_key . third-key ]`
 #[derive(Debug, Eq, Clone, Copy)]
-pub enum TomlKey<'a> {
+pub enum Key<'a> {
     Plain(&'a str),
     String {
         text: &'a str,
@@ -17,21 +17,21 @@ pub enum TomlKey<'a> {
     User(&'a str),
 }
 
-/// Protected interface for the `TomlKey`.
-pub trait TomlKeyPrivate<'a> {
-    fn from_key(key: &'a str) -> TomlKey<'a>;
-    fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a>;
+/// Protected interface for the `Key`.
+pub trait KeyPrivate<'a> {
+    fn from_key(key: &'a str) -> Key<'a>;
+    fn from_string(text: &'a str, literal: bool, multiline: bool) -> Key<'a>;
 }
 
-impl<'a> TomlKeyPrivate<'a> for TomlKey<'a> {
+impl<'a> KeyPrivate<'a> for Key<'a> {
     /// Wraps a plain TOML key.
-    fn from_key(key: &'a str) -> TomlKey<'a> {
-        TomlKey::Plain(key)
+    fn from_key(key: &'a str) -> Key<'a> {
+        Key::Plain(key)
     }
 
     /// Wraps a TOML string as a key.
-    fn from_string(text: &'a str, literal: bool, multiline: bool) -> TomlKey<'a> {
-        TomlKey::String {
+    fn from_string(text: &'a str, literal: bool, multiline: bool) -> Key<'a> {
+        Key::String {
             text: text,
             literal: literal,
             multiline: multiline,
@@ -39,10 +39,10 @@ impl<'a> TomlKeyPrivate<'a> for TomlKey<'a> {
     }
 }
 
-impl<'a> TomlKey<'a> {
+impl<'a> Key<'a> {
     /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
-        use self::TomlKey::*;
+        use self::Key::*;
         match *self {
             Plain(text) => out.push_str(text),
             String { text, literal, multiline } => {
@@ -56,7 +56,7 @@ impl<'a> TomlKey<'a> {
 
     /// Returns the key encoded as a Rust string.
     pub fn normalized(&self) -> Cow<'a, str> {
-        use self::TomlKey::*;
+        use self::Key::*;
         match *self {
             Plain(text) | User(text) => Cow::Borrowed(text),
             String { text, literal, multiline } => clean_string(text, literal, multiline),
@@ -69,17 +69,17 @@ impl<'a> TomlKey<'a> {
     }
 }
 
-impl<'a> PartialEq for TomlKey<'a> {
-    fn eq(&self, other: &TomlKey<'a>) -> bool {
+impl<'a> PartialEq for Key<'a> {
+    fn eq(&self, other: &Key<'a>) -> bool {
         self.normalized() == other.normalized()
     }
 
-    fn ne(&self, other: &TomlKey<'a>) -> bool {
+    fn ne(&self, other: &Key<'a>) -> bool {
         self.normalized() != other.normalized()
     }
 }
 
-impl<'a> hash::Hash for TomlKey<'a> {
+impl<'a> hash::Hash for Key<'a> {
     fn hash<H>(&self, state: &mut H)
         where H: hash::Hasher
     {
@@ -87,21 +87,21 @@ impl<'a> hash::Hash for TomlKey<'a> {
     }
 }
 
-impl<'a, 'b> From<&'b TomlKey<'a>> for TomlKey<'a> {
-    fn from(other: &TomlKey<'a>) -> TomlKey<'a> {
+impl<'a, 'b> From<&'b Key<'a>> for Key<'a> {
+    fn from(other: &Key<'a>) -> Key<'a> {
         *other
     }
 }
 
-impl<'a> From<&'a str> for TomlKey<'a> {
-    fn from(other: &'a str) -> TomlKey<'a> {
-        TomlKey::User(other)
+impl<'a> From<&'a str> for Key<'a> {
+    fn from(other: &'a str) -> Key<'a> {
+        Key::User(other)
     }
 }
 
 // TODO: Undo this ugly hack by properly using generics
-impl<'a, 'b> From<&'b &'a str> for TomlKey<'a> {
-    fn from(other: &&'a str) -> TomlKey<'a> {
-        TomlKey::User(*other)
+impl<'a, 'b> From<&'b &'a str> for Key<'a> {
+    fn from(other: &&'a str) -> Key<'a> {
+        Key::User(*other)
     }
 }

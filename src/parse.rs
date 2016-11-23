@@ -2,15 +2,15 @@
 use std::iter::{Iterator, Peekable};
 
 use tokens::{self, TokenError, Token, Tokens};
-use key::{TomlKey, TomlKeyPrivate};
-use table::{TomlTable, TomlTablePrivate, CreatePathError};
+use key::{Key, KeyPrivate};
+use table::{Table, TablePrivate, CreatePathError};
 use scope::Scope;
-use array::{TomlArray, TomlArrayPrivate};
-use value::{TomlValue, TomlValuePrivate};
+use array::{Array, ArrayPrivate};
+use value::{Value, ValuePrivate};
 use debug;
 
 /// Parses the given text as a TOML document and returns the top-level table for the document.
-pub fn parse(text: &str) -> Result<TomlTable, ParseError> {
+pub fn parse(text: &str) -> Result<Table, ParseError> {
     let mut parser = Parser::new(text);
     parser.parse()
 }
@@ -239,15 +239,15 @@ impl<'a> Parser<'a> {
                 Whitespace(text) => {
                     scope.push_space(text);
                 }
-                Key(text) => {
+                PlainKey(text) => {
                     key_found = true;
                     was_key = true;
-                    scope.push_key(TomlKey::from_key(text));
+                    scope.push_key(Key::from_key(text));
                 }
                 String { text, literal, multiline } => {
                     key_found = true;
                     was_key = true;
-                    scope.push_key(TomlKey::from_string(text, literal, multiline));
+                    scope.push_key(Key::from_string(text, literal, multiline));
                 }
                 _ => {
                     return Err(InvalidScope {
@@ -263,10 +263,10 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn read_array(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
+    fn read_array(&mut self, start: usize) -> Result<Value<'a>, ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
-        let mut array = TomlArray::new();
+        let mut array = Array::new();
         let mut is_reading_value = true;
         let mut was_comma = false;
         loop {
@@ -344,12 +344,12 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(TomlValue::Array(array))
+        Ok(Value::Array(array))
     }
 
     fn read_inline_table(&mut self,
                          start: usize,
-                         table: &mut TomlTable<'a>)
+                         table: &mut Table<'a>)
                          -> Result<(), ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
@@ -372,21 +372,21 @@ impl<'a> Parser<'a> {
                             });
                         }
                     }
-                    (pos, Key(_)) |
-                    (pos, String { .. }) => {
+                    (pos, PlainKey(text)) => {
+                        let key = Key::Plain(text);
+                        let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
+                        // TODO: Check for duplicate keys
+                        table.insert_spaced(key, value, before_eq, after_eq);
+                        reading_key = false;
+                    }
+                    (pos, String { text, literal, multiline }) => {
                         if was_comma {
                             return Err(NonFinalComma { pos: pos });
                         }
-                        let key = if let Key(text) = res.1 {
-                            TomlKey::Plain(text)
-                        } else if let String { text, literal, multiline } = res.1 {
-                            TomlKey::String {
-                                text: text,
-                                literal: literal,
-                                multiline: multiline,
-                            }
-                        } else {
-                            unreachable!();
+                        let key = Key::String {
+                            text: text,
+                            literal: literal,
+                            multiline: multiline,
                         };
                         let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
                         // TODO: Check for duplicate keys
@@ -422,23 +422,23 @@ impl<'a> Parser<'a> {
         Err(UnfinishedValue { start: start })
     }
 
-    fn read_value(&mut self, start: usize) -> Result<TomlValue<'a>, ParseError> {
+    fn read_value(&mut self, start: usize) -> Result<Value<'a>, ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
         let next = self.next_or(UnfinishedValue { start: start })?;
         match next {
-            (_, Int(text)) => Ok(TomlValue::new_int(text)),
-            (_, Float(text)) => Ok(TomlValue::new_float(text)),
+            (_, Int(text)) => Ok(Value::new_int(text)),
+            (_, Float(text)) => Ok(Value::new_float(text)),
             (_, String { text, literal, multiline }) => {
-                Ok(TomlValue::new_string(text, literal, multiline))
+                Ok(Value::new_string(text, literal, multiline))
             }
-            (_, Bool(value)) => Ok(TomlValue::new_bool(value)),
-            (_, DateTime(text)) => Ok(TomlValue::new_datetime(text)),
+            (_, Bool(value)) => Ok(Value::new_bool(value)),
+            (_, DateTime(text)) => Ok(Value::new_datetime(text)),
             (pos, SingleBracketOpen) => Ok(self.read_array(pos)?),
             (pos, CurlyOpen) => {
-                let mut table = TomlTable::new_inline();
+                let mut table = Table::new_inline();
                 self.read_inline_table(pos, &mut table)?;
-                Ok(TomlValue::Table(table))
+                Ok(Value::Table(table))
             }
             (pos, _) => {
                 Err(InvalidValue {
@@ -452,8 +452,8 @@ impl<'a> Parser<'a> {
     fn read_item
         (&mut self,
          start: usize,
-         key: TomlKey<'a>)
-         -> Result<(TomlKey<'a>, Option<&'a str>, Option<&'a str>, TomlValue<'a>), ParseError> {
+         key: Key<'a>)
+         -> Result<(Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>), ParseError> {
         use self::ParseError::*;
         use tokens::Token::*;
         let mut before_eq = None;
@@ -507,7 +507,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn read_table(&mut self, table: &mut TomlTable<'a>) -> Result<(), ParseError> {
+    fn read_table(&mut self, table: &mut Table<'a>) -> Result<(), ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
         while self.tokens.peek().is_some() {
@@ -532,18 +532,17 @@ impl<'a> Parser<'a> {
                 (_, Comment(text)) => {
                     table.push_comment(text);
                 }
-                (pos, Key(_)) |
-                (pos, String { .. }) => {
-                    let key = if let Key(text) = res.1 {
-                        TomlKey::Plain(text)
-                    } else if let String { text, literal, multiline } = res.1 {
-                        TomlKey::String {
-                            text: text,
-                            literal: literal,
-                            multiline: multiline,
-                        }
-                    } else {
-                        unreachable!();
+                (pos, PlainKey(text)) => {
+                    let key = Key::Plain(text);
+                    let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
+                    // TODO: Check for duplicate keys
+                    table.insert_spaced(key, value, before_eq, after_eq);
+                }
+                (pos, String { text, literal, multiline }) => {
+                    let key = Key::String {
+                        text: text,
+                        literal: literal,
+                        multiline: multiline,
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
                     // TODO: Check for duplicate keys
@@ -557,10 +556,10 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse(&mut self) -> Result<TomlTable<'a>, ParseError> {
+    fn parse(&mut self) -> Result<Table<'a>, ParseError> {
         use tokens::Token::*;
         use self::ParseError::*;
-        let mut top_table = TomlTable::new_regular();
+        let mut top_table = Table::new_regular();
         while let Some(res) = self.tokens.next() {
             match res? {
                 (_, Whitespace(text)) => {
@@ -575,9 +574,9 @@ impl<'a> Parser<'a> {
 
                     // TODO: Validate that the scope hasn't been used before
                     {
-                        let mut table = if let TomlValue::Table(ref mut table) =
+                        let mut table = if let Value::Table(ref mut table) =
                                                *top_table.find_or_insert_with(scope.path(),
-                                                 || TomlValue::Table(TomlTable::new_regular()))? {
+                                                 || Value::Table(Table::new_regular()))? {
                             table
                         } else {
                             // TODO: improve this error
@@ -598,13 +597,13 @@ impl<'a> Parser<'a> {
                 (_, Comment(text)) => {
                     top_table.push_comment(text);
                 }
-                (pos, Key(text)) => {
-                    let key = TomlKey::Plain(text);
+                (pos, PlainKey(text)) => {
+                    let key = Key::Plain(text);
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
                     top_table.insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, String { text, literal, multiline }) => {
-                    let key = TomlKey::String {
+                    let key = Key::String {
                         text: text,
                         literal: literal,
                         multiline: multiline,

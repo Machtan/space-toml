@@ -1,5 +1,5 @@
 
-use value::TomlValue;
+use value::Value;
 
 /// A 'visual' item within a TOML array.
 #[derive(Debug)]
@@ -13,23 +13,23 @@ enum ArrayItem<'a> {
 
 /// A homogenous array of TOML values (+ the array's visual representation).
 #[derive(Debug)]
-pub struct TomlArray<'a> {
-    items: Vec<TomlValue<'a>>,
+pub struct Array<'a> {
+    items: Vec<Value<'a>>,
     order: Vec<ArrayItem<'a>>,
 }
 
-/// A protected interface for the `TomlArray`.
-pub trait TomlArrayPrivate<'a> {
-    fn push(&mut self, value: TomlValue<'a>) -> Result<(), String>;
+/// A protected interface for the `Array`.
+pub trait ArrayPrivate<'a> {
+    fn push(&mut self, value: Value<'a>) -> Result<(), String>;
     fn push_space(&mut self, space: &'a str);
     fn push_comma(&mut self);
     fn push_comment(&mut self, comment: &'a str);
 }
 
-impl<'a> TomlArrayPrivate<'a> for TomlArray<'a> {
+impl<'a> ArrayPrivate<'a> for Array<'a> {
     /// Pushes a new value to the array.
     /// Errors if the value is of a different type than the first element of the array.
-    fn push(&mut self, value: TomlValue<'a>) -> Result<(), String> {
+    fn push(&mut self, value: Value<'a>) -> Result<(), String> {
         if let Some(first) = self.items.get(0) {
             if !first.is_same_type(&value) {
                 return Err(format!("Attempted to insert a value of type {:?} into an array of \
@@ -60,17 +60,17 @@ impl<'a> TomlArrayPrivate<'a> for TomlArray<'a> {
     }
 }
 
-impl<'a> TomlArray<'a> {
+impl<'a> Array<'a> {
     /// Creates a new TOML array.
-    pub fn new() -> TomlArray<'a> {
-        TomlArray {
+    pub fn new() -> Array<'a> {
+        Array {
             items: Vec::new(),
             order: Vec::new(),
         }
     }
 
     /// Returns the items of this array.
-    pub fn items(&self) -> &Vec<TomlValue<'a>> {
+    pub fn items(&self) -> &Vec<Value<'a>> {
         &self.items
     }
 
