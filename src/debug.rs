@@ -24,7 +24,7 @@ pub fn get_position(text: &str, byte_offset: usize) -> (usize, usize) {
 pub fn write_unclosed<O: fmt::Write>(text: &str, start: usize, output: &mut O) -> fmt::Result {
     let (line, col) = get_position(text, start);
     let line_text = text.lines().skip(line - 1).next().unwrap();
-    write!(output, "{}", line_text);
+    write!(output, "{}", line_text)?;
     let line_len = line_text.chars().count();
     for _ in 0..col - 1 {
         write!(output, " ")?;

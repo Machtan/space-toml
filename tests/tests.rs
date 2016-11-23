@@ -5,17 +5,11 @@ pub fn assert_format_preserved_on_write(text: &str, verbose: bool) {
     let mut tokens = space_toml::tokens(text);
     
     while let Some(res) = tokens.next() {
-        match res {
-            Ok((pos, token)) => {
-                if verbose {
-                    println!("{:?}: {:?}", pos, token);
-                }
-                token.write(&mut out);
-            }
-            Err(err) => {
-                return err.show(text);
-            }
+        let (pos, token) = res.expect("Lexing failed");
+        if verbose {
+            println!("{:?}: {:?}", pos, token);
         }
+        token.write(&mut out);
     }
     assert_eq!(text, &out);
 }
@@ -23,16 +17,9 @@ pub fn assert_format_preserved_on_write(text: &str, verbose: bool) {
 pub fn assert_can_lex(text: &str, verbose: bool) {
     let mut tokens = space_toml::tokens(text);
     while let Some(res) = tokens.next() {
-        match res {
-            Ok((pos, token)) => {
-                if verbose {
-                    println!("{:?}: {:?}", pos, token);
-                }
-            }
-            Err(err) => {
-                err.show(text);
-                panic!("Lexing failed");
-            }
+        let (pos, token) = res.expect("Lexing failed");
+        if verbose {
+            println!("{:?}: {:?}", pos, token);
         }
     }
 } 

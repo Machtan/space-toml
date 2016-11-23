@@ -60,7 +60,7 @@ fn main() {
         }
         Err(err) => {
             println!("Parse error:");
-            err.show(simple);
+            println!("{}", err);
         }
     }
     

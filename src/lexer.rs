@@ -700,52 +700,52 @@ impl<'a> fmt::Display for Error<'a> {
         match self.kind {
             UnclosedString { start } => {
                 let (line, col) = debug::get_position(self.text, start);
-                write!(output, "Unclosed string starting at {}:{} :", line, col);
+                write!(output, "Unclosed string starting at {}:{} :", line, col)?;
                 debug::write_unclosed(self.text, start, output)
             }
             UnclosedLiteral { start } => {
                 let (line, col) = debug::get_position(self.text, start);
-                write!(output, "Unclosed string starting at {}:{} :", line, col);
+                write!(output, "Unclosed string starting at {}:{} :", line, col)?;
                 debug::write_unclosed(self.text, start, output)
             }
             InvalidEscapeCharacter { pos, .. } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid escape character at {}:{} :", line, col);
+                write!(output, "Invalid escape character at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
             InvalidValueCharacter { start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid character in value at {}:{} :", line, col);
+                write!(output, "Invalid character in value at {}:{} :", line, col)?;
                 debug::write_invalid_part(self.text, start, pos, output)
             }
             InvalidIntCharacter { start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid character in integer at {}:{} :", line, col);
+                write!(output, "Invalid character in integer at {}:{} :", line, col)?;
                 debug::write_invalid_part(self.text, start, pos, output)
             }
             InvalidFloatCharacter { start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid character in float at {}:{} :", line, col);
+                write!(output, "Invalid character in float at {}:{} :", line, col)?;
                 debug::write_invalid_part(self.text, start, pos, output)
             }
             UnmatchedClosingBrace { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Unmatched brace found at {}:{} :", line, col);
+                write!(output, "Unmatched brace found at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
             InvalidKeyCharacter { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid key character at {}:{} :", line, col);
+                write!(output, "Invalid key character at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
             InvalidWhitespace { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Invalid whitespace character at {}:{} :", line, col);
+                write!(output, "Invalid whitespace character at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
             UnderscoreNotAfterNumber { start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                write!(output, "Underscore not after number at {}:{} :", line, col);
+                write!(output, "Underscore not after number at {}:{} :", line, col)?;
                 debug::write_invalid_part(self.text, start, pos, output)
             },
         }
