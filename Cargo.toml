@@ -7,3 +7,6 @@ description = "Edit TOML files while preserving all format information, includin
 keywords = ["toml", "TOML", "format", "edit", "nondestructive"]
 
 [dependencies]
+
+[dev-dependencies]
+rustc-serialize = "0.3"

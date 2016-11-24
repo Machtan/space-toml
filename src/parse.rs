@@ -106,6 +106,8 @@ pub enum ErrorKind<'a> {
         start: usize,
         /// The byte index of the invalid value
         pos: usize,
+        /// A message about the type error.
+        message: String,
     },
 }
 
@@ -134,55 +136,56 @@ impl<'a> fmt::Display for Error<'a> {
             Lex(ref err) => {
                 err.fmt(f)
             }
-            InvalidScope { start, pos } => {
+            InvalidScope { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Invalid scope found at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "Invalid scope found at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
             UnfinishedScope { start } => {
                 let (line, col) = debug::get_position(self.text, start);
-                println!("Unifinished scope starting at {}:{} :", line, col);
+                writeln!(f, "Unifinished scope starting at {}:{} :", line, col)?;
                 debug::write_unclosed(self.text, start, f)
             }
             UnfinishedItem { start } => {
                 let (line, col) = debug::get_position(self.text, start);
-                println!("No value found for key at {}:{} :", line, col);
+                writeln!(f, "No value found for key at {}:{} :", line, col)?;
                 debug::write_unclosed(self.text, start, f)
             }
             UnfinishedValue { start } => {
                 let (line, col) = debug::get_position(self.text, start);
-                println!("Unifinished value starting at {}:{} :", line, col);
+                writeln!(f, "Unifinished value starting at {}:{} :", line, col)?;
                 debug::write_unclosed(self.text, start, f)
             }
-            MissingEquals { start, pos } => {
+            MissingEquals { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("'=' expected at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "'=' expected at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
-            InvalidValue { start, pos } => {
+            InvalidValue { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Invalid value found at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "Invalid value found at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
-            DoubleCommaInArray { start, pos } => {
+            DoubleCommaInArray { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Invalid comma in array at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "Invalid comma in array at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
-            MissingComma { start, pos } => {
+            MissingComma { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Expected comma in array at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "Expected comma in array at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
             InvalidTableItem { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Invalid top_level item found at {}:{} :", line, col);
+                writeln!(f, "Invalid top_level item found at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, f)
             }
-            WrongValueTypeInArray { start, pos } => {
+            WrongValueTypeInArray { ref message, start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                println!("Value of invalid type found in array at {}:{} :", line, col);
-                debug::write_invalid_part(self.text, start, pos, f)
+                writeln!(f, "Value of invalid type found in array at {}:{} :", line, col)?;
+                writeln!(f, "{}", message)?;
+                debug::write_invalid_character(self.text, pos, f)
             }
             _ => {
                 unimplemented!();
@@ -336,10 +339,11 @@ impl<'a> Parser<'a> {
                         let value = self.read_value(start)?;
                         match array.push(value) {
                             Ok(()) => {}
-                            Err(_) => {
+                            Err(message) => {
                                 return self.err(WrongValueTypeInArray {
                                     start: start,
                                     pos: pos,
+                                    message: message,
                                 });
                             }
                         }

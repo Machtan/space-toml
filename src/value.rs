@@ -9,32 +9,43 @@ use utils::{write_string, escape_string, clean_string};
 /// """multi-line normal""" '''multi-line literal'''
 #[derive(Debug, Clone)]
 pub enum TomlString<'a> {
+    /// A formatted TOML string, without quotes.
     Text {
+        /// The text inside the quotes.
         text: &'a str,
+        /// Whether this is a literal string (`'`-quoted, with no escape characters 
+        /// allowed).
         literal: bool,
+        /// Whether this is a multiline (triple-quoted) string.
         multiline: bool,
     },
+    /// A user-supplied string.
     User(Cow<'a, str>),
 }
-impl<'a> TomlString<'a> {
+
+pub trait TomlStringPrivate {
     /// Creates a new TOML string from the values of the tokens given by the lexer.
-    pub fn new(text: &'a str, literal: bool, multiline: bool) -> TomlString<'a> {
+    fn new<'a>(text: &'a str, literal: bool, multiline: bool) -> TomlString<'a> {
         TomlString::Text {
             text: text,
             literal: literal,
             multiline: multiline,
         }
     }
+}
 
-    /// Creates a new TOML string from a user string.
+impl<'a> TomlStringPrivate for TomlString<'a> {}
+
+impl<'a> TomlString<'a> {
+    /// Creates a new TOML string from a user-supplied string.
     /// This means that the string is formatted differently when written
     /// (it has no 'set' format like the other string variant).
-    fn from_user<T: Into<Cow<'a, str>>>(text: T) -> TomlString<'a> {
+    pub fn from_user<T: Into<Cow<'a, str>>>(text: T) -> TomlString<'a> {
         TomlString::User(text.into())
     }
 
-
-    fn clean(&self) -> Cow<'a, str> {
+    /// Returns the string with escape characters converted to proper UTF-8 characters.
+    pub fn clean(&self) -> Cow<'a, str> {
         use self::TomlString::*;
         match *self {
             Text { text, literal, multiline } => clean_string(text, literal, multiline),
@@ -43,16 +54,20 @@ impl<'a> TomlString<'a> {
     }
 }
 
-/// A TOML float value.
-/// 2.34.
+/// A TOML floating point number.
+/// example: `2.34`.
 #[derive(Debug)]
 pub enum Float<'a> {
+    /// A formatted float read from a document.
+    /// If you create this yourself, you can write invalid TOML documents :D.
     Text(&'a str),
+    /// A user-inserted value.
     Value(f64),
 }
 
 impl<'a> Float<'a> {
-    fn value(&self) -> f64 {
+    /// Returns the value of this number.
+    pub fn value(&self) -> f64 {
         use self::Float::*;
         match *self {
             Text(text) => text.parse().expect("Unparseable TOML float"),
@@ -61,16 +76,20 @@ impl<'a> Float<'a> {
     }
 }
 
-/// A TOML integer value.
-/// `3` `32_000`.
+/// A TOML integer.
+/// example: `3` `32_000`.
 #[derive(Debug)]
 pub enum Int<'a> {
+    /// A formatted integer read from a document.
+    /// If you create this yourself, you can write invalid TOML documents :D.
     Text(&'a str),
+    /// A user-inserted value.
     Value(i64),
 }
 
 impl<'a> Int<'a> {
-    fn value(&self) -> i64 {
+    /// Returns the value of this number.
+    pub fn value(&self) -> i64 {
         use self::Int::*;
         match *self {
             Text(text) => text.parse().expect("Unparseable TOML float"),
@@ -146,6 +165,7 @@ impl<'a> Value<'a> {
             (&Float(_), &Float(_)) => true,
             (&Table(_), &Table(_)) => true,
             (&Array(_), &Array(_)) => true,
+            (&DateTime(_), &DateTime(_)) => true,
             _ => false,
         }
     }

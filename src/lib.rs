@@ -20,5 +20,5 @@ pub type LexError<'a> = lexer::Error<'a>;
 pub type LexerErrorKind = lexer::ErrorKind;
 pub use table::{CreatePathError, Table};
 pub use array::Array;
-pub use value::Value;
+pub use value::{Value, Int, Float, TomlString};
 pub use parse::{parse, Error, ErrorKind, Result};

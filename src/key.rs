@@ -62,9 +62,10 @@ impl<'a> Key<'a> {
             String { text, literal, multiline } => clean_string(text, literal, multiline),
         }
     }
-    
-    /// Returns the key as a String.
-    pub fn to_string(&self) -> String {
+}
+
+impl<'a> ToString for Key<'a> {
+    fn to_string(&self) -> String {
         self.normalized().to_string()
     }
 }

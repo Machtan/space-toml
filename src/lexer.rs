@@ -713,20 +713,20 @@ impl<'a> fmt::Display for Error<'a> {
                 write!(output, "Invalid escape character at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
-            InvalidValueCharacter { start, pos } => {
+            InvalidValueCharacter { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Invalid character in value at {}:{} :", line, col)?;
-                debug::write_invalid_part(self.text, start, pos, output)
+                debug::write_invalid_character(self.text, pos, output)
             }
-            InvalidIntCharacter { start, pos } => {
+            InvalidIntCharacter { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Invalid character in integer at {}:{} :", line, col)?;
-                debug::write_invalid_part(self.text, start, pos, output)
+                debug::write_invalid_character(self.text, pos, output)
             }
-            InvalidFloatCharacter { start, pos } => {
+            InvalidFloatCharacter { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Invalid character in float at {}:{} :", line, col)?;
-                debug::write_invalid_part(self.text, start, pos, output)
+                debug::write_invalid_character(self.text, pos, output)
             }
             UnmatchedClosingBrace { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
@@ -743,10 +743,10 @@ impl<'a> fmt::Display for Error<'a> {
                 write!(output, "Invalid whitespace character at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             }
-            UnderscoreNotAfterNumber { start, pos } => {
+            UnderscoreNotAfterNumber { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Underscore not after number at {}:{} :", line, col)?;
-                debug::write_invalid_part(self.text, start, pos, output)
+                debug::write_invalid_character(self.text, pos, output)
             },
         }
     }

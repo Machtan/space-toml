@@ -1,5 +1,6 @@
 
 use value::Value;
+use std::slice;
 
 /// A 'visual' item within a TOML array.
 #[derive(Debug)]
@@ -72,6 +73,11 @@ impl<'a> Array<'a> {
     /// Returns the items of this array.
     pub fn items(&self) -> &Vec<Value<'a>> {
         &self.items
+    }
+
+    /// Returns an iterator over the items in this array.
+    pub fn iter(&self) -> slice::Iter<Value<'a>> {
+        self.items.iter()
     }
 
     /// Returns whether this array is empty of values (it might still contain formatting info).
