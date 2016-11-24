@@ -5,7 +5,7 @@ use space_toml::{Table, Value};
 use std::collections::BTreeMap;
 use rustc_serialize::json::Json;
 
-pub fn assert_format_preserved_on_write(text: &str, verbose: bool) {
+pub fn assert_data_preserved_on_lex(text: &str, verbose: bool) {
     let mut out = String::new();
     let mut tokens = space_toml::tokens(text);
     
@@ -16,7 +16,24 @@ pub fn assert_format_preserved_on_write(text: &str, verbose: bool) {
         }
         token.write(&mut out);
     }
-    assert_eq!(text, &out);
+    assert!(text == out,
+            "======== expected =======\n{}\n======= got =======\n{}\n",
+            text,
+            out);
+}
+
+pub fn assert_can_parse(text: &str) {
+    space_toml::parse(text).expect("Parsing failed");
+}
+
+pub fn assert_format_preserved_on_write(text: &str) {
+    let table = space_toml::parse(text).expect("Parsing failed");
+    let mut out = String::new();
+    table.write(&mut out);
+    assert!(text == out,
+            "======== expected =======\n{}\n======= got =======\n{}\n",
+            text,
+            out);
 }
 
 pub fn assert_can_lex(text: &str, verbose: bool) {
@@ -91,15 +108,25 @@ pub fn compare_output(toml: &str, json: &str) {
 macro_rules! simple_tests {
     ( $module:ident: $source:expr ) => {
         pub mod $module {
-            use super::{assert_can_lex, assert_format_preserved_on_write};
+            use super::{assert_can_lex, assert_format_preserved_on_write, assert_can_parse, assert_data_preserved_on_lex};
             #[test]
             fn can_lex() {
                 assert_can_lex($source, true);
             }
 
             #[test]
-            fn can_preserve() {
-                assert_format_preserved_on_write($source, true);
+            fn lexer_preserves_format() {
+                assert_data_preserved_on_lex($source, true);
+            }
+
+            #[test]
+            fn can_parse() {
+                assert_can_parse($source);
+            }
+
+            #[test]
+            fn parser_preserves_format() {
+                assert_format_preserved_on_write($source);
             }
         }
     }
@@ -108,15 +135,25 @@ macro_rules! simple_tests {
 macro_rules! test_valid {
     ( $name:ident : $toml:expr, $json:expr) => {
         pub mod $name {
-            use super::{assert_can_lex, assert_format_preserved_on_write, compare_output};
-            #[test]
+            use super::{assert_can_lex, assert_format_preserved_on_write, compare_output, assert_data_preserved_on_lex, assert_can_parse};
+           #[test]
             fn can_lex() {
                 assert_can_lex($toml, true);
             }
 
             #[test]
-            fn can_preserve() {
-                assert_format_preserved_on_write($toml, true);
+            fn lexer_preserves_format() {
+                assert_data_preserved_on_lex($toml, true);
+            }
+
+            #[test]
+            fn can_parse() {
+                assert_can_parse($toml);
+            }
+
+            #[test]
+            fn parser_preserves_format() {
+                assert_format_preserved_on_write($toml);
             }
 
             #[test]
@@ -133,8 +170,8 @@ simple_tests!(hard_unicode: include_str!("../samples/hard_example_unicode.toml")
 simple_tests!(official: include_str!("../samples/official.toml"));
 simple_tests!(example: include_str!("../samples/example.toml"));
 
-pub mod valid {
-    pub use super::{assert_can_lex, assert_format_preserved_on_write, compare_output};
+/*pub mod valid {
+    pub use super::{assert_can_lex, assert_format_preserved_on_write, compare_output, assert_data_preserved_on_lex, assert_can_parse};
     test_valid!(array_empty:
        include_str!("valid/array-empty.toml"),
        include_str!("valid/array-empty.json"));
@@ -261,5 +298,5 @@ pub mod valid {
     test_valid!(example_bom:
         include_str!("valid/example-bom.toml"),
         include_str!("valid/example.json"));
-}
+}*/
 
