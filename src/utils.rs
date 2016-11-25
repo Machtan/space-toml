@@ -64,13 +64,27 @@ pub fn create_key<'a>(text: &'a str) -> Cow<'a, str> {
 
 /// Parses and cleans the given TOML string.
 pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a, str> {
+    let mut chars = text.char_indices().peekable();
     if literal {
+        if multiline {
+            match chars.peek() {
+                Some(&(_, '\r')) => {
+                    chars.next();
+                    chars.next();
+                    return Cow::Owned(chars.map(|(_, c)| c).collect());
+                }
+                Some(&(_, '\n')) => {
+                    chars.next();
+                    return Cow::Owned(chars.map(|(_, c)| c).collect());
+                }
+                _ => {}
+            }
+        }
         return Cow::Borrowed(text);
     }
     let mut string = String::new();
     let mut escaped = false;
     let mut escaped_whitespace = false;
-    let mut chars = text.char_indices().peekable();
     if multiline {
         // Ignore first newline in multiline strings
         if let Some(&(_, '\r')) = chars.peek() {
@@ -137,7 +151,10 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             }
         }
     }
-    trace!("Clean {:?} => {:?}", text, string);
+    trace!("Clean (lit/mul: {}/{}) {:?} => {:?}", 
+        if literal {"t"} else {"f"}, 
+        if multiline {"t"} else {"f"}, 
+        text, string);
 
     Cow::Owned(string)
 }
