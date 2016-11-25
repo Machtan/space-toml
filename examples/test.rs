@@ -21,7 +21,7 @@ pub fn to_json(toml: &Value) -> Json {
     }
     match *toml {
         Value::String(ref s) => {
-            println!("Converting string {:?} to JSON", s);
+            //println!("Converting string {:?} to JSON", s);
             doit("string", Json::String(s.clean().to_string()))
         },
         Int(ref i) => doit("integer", Json::String(format!("{}", i.value()))),

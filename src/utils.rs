@@ -1,5 +1,6 @@
 
 use std::borrow::Cow;
+use std::char;
 
 /// Writes the TOML representation of a TOML string to another string.
 pub fn write_string(text: &str, literal: bool, multiline: bool, out: &mut String) {
@@ -94,7 +95,7 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             chars.next();
         }
     }
-    while let Some((_, ch)) = chars.next() {
+    while let Some((i, ch)) = chars.next() {
         if escaped {
             match ch {
                 ch if ch.is_whitespace() => {
@@ -128,16 +129,18 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     string.push('\\');
                     escaped = false;
                 }
-                'u' => {
-                    for _ in 0..4 {
-                        chars.next();
+                c @ 'u' | c @ 'U' => {
+                    let start = i+1;
+                    let len = if c == 'u' {4} else {8};
+                    for _ in 0..len {
+                        chars.next().unwrap();
                     }
-                    escaped = false;
-                }
-                'U' => {
-                    for _ in 0..8 {
-                        chars.next();
-                    }
+                    // The unicode hex parts must be ASCII chars (hopefully ;)
+                    let num = &text[start..start+len];
+                    info!("Escaped unicode hex code: {:?}", num);
+                    // This is validated by the lexer, see lexer.rs 'read_string'.
+                    let unicode = char::from_u32(u32::from_str_radix(num, 16).unwrap()).unwrap();
+                    string.push(unicode);
                     escaped = false;
                 }
                 _ => panic!("Invalid escape character found when parsing (lexer error)"),
