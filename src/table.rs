@@ -15,6 +15,8 @@ enum TableItem<'a> {
         before_eq: &'a str,
         after_eq: &'a str,
     },
+    /// A [table] or an [[array_of_tables]]
+    Scope(Key<'a>),
     /// For inline tables
     Comma,
 }
@@ -44,18 +46,20 @@ pub enum CreatePathError {
 #[derive(Debug)]
 pub struct Table<'a> {
     inline: bool,
+    scope: Option<Scope<'a>>,
     order: Vec<TableItem<'a>>,
     items: HashMap<Key<'a>, Value<'a>>,
-    visual_scopes: Vec<Scope<'a>>,
 }
 
 /// A protected interface for a the TOML table.
 pub trait TablePrivate<'a> {
+    fn new(inline: bool, scope: Option<Scope<'a>>) -> Table<'a>;
+    fn set_scope(&mut self, scope: Scope<'a>);
+    fn push_table(&mut self, key: Key<'a>);
     fn push_space(&mut self, space: &'a str);
     fn push_comma(&mut self);
     fn push_newline(&mut self, cr: bool);
     fn push_comment(&mut self, comment: &'a str);
-    fn push_scope(&mut self, scope: Scope<'a>);
     fn insert_spaced<K: Into<Key<'a>>>(&mut self,
                                            key: K,
                                            value: Value<'a>,
@@ -64,6 +68,26 @@ pub trait TablePrivate<'a> {
 }
 
 impl<'a> TablePrivate<'a> for Table<'a> {
+    /// Creates a new table.
+    fn new(inline: bool, scope: Option<Scope<'a>>) -> Table<'a> {
+        Table {
+            inline: inline,
+            order: Vec::new(),
+            items: HashMap::new(),
+            scope: scope,
+        }
+    }
+
+    /// Sets the scope for this table.
+    fn set_scope(&mut self, scope: Scope<'a>) {
+        self.scope = Some(scope);
+    }
+
+    /// Pushes a table/array of tables to the format order.
+    fn push_table(&mut self, key: Key<'a>) {
+        self.order.push(TableItem::Scope(key));
+    }
+
     /// Pushes a space to the format order.
     fn push_space(&mut self, space: &'a str) {
         self.order.push(TableItem::Space(space));
@@ -91,12 +115,6 @@ impl<'a> TablePrivate<'a> for Table<'a> {
         self.order.push(TableItem::Comment(comment));
     }
 
-    /// Pushes a table / table-array scope to the format order.
-    /// Note: Only for the top-level table.
-    fn push_scope(&mut self, scope: Scope<'a>) {
-        self.visual_scopes.push(scope);
-    }
-
     /// Inserts the given key as an entry to the table with the given sapce.
     fn insert_spaced<K: Into<Key<'a>>>(&mut self,
                                            key: K,
@@ -115,24 +133,14 @@ impl<'a> TablePrivate<'a> for Table<'a> {
 }
 
 impl<'a> Table<'a> {
-    /// Creates a new table.
-    fn new(inline: bool) -> Table<'a> {
-        Table {
-            inline: inline,
-            order: Vec::new(),
-            items: HashMap::new(),
-            visual_scopes: Vec::new(),
-        }
-    }
-
     /// Creates a new regular TOML table.
     pub fn new_regular() -> Table<'a> {
-        Table::new(false)
+        Table::new(false, None)
     }
 
     /// Creates a new inline TOML table.
     pub fn new_inline() -> Table<'a> {
-        Table::new(true)
+        Table::new(true, None)
     }
 
     fn find_or_insert_with_slice<F, T>(&mut self,
@@ -143,15 +151,45 @@ impl<'a> Table<'a> {
               T: Into<Value<'a>>
     {
         match *path {
-            [key] => Ok(self.items.entry(key).or_insert_with(|| default().into())),
-            [key, _..] => {
-                match *self.items
-                    .entry(key)
-                    .or_insert_with(|| Value::Table(Table::new(false))) {
-                    Value::Table(ref mut table) => {
-                        table.find_or_insert_with_slice(&path[1..], default)
+            [key] => {
+                let has_entry = self.items.contains_key(&key);
+                if !has_entry {
+                    let value = default().into();
+                    if value.is_noninline_table() || value.is_noninline_array_of_tables() {
+                        self.push_table(key.clone());
                     }
-                    _ => Err(CreatePathError::InvalidScopeTable),
+                    self.items.insert(key.clone(), value);
+                }
+                Ok(self.items.get_mut(&key).unwrap())
+            }
+            [key, _..] => {
+                let has_entry = self.items.contains_key(&key);
+                if !has_entry {
+                    let value = Value::Table(Table::new_regular());
+                    self.items.insert(key.clone(), value);
+                    self.push_table(key.clone());
+                    self.items.get_mut(&key).unwrap().table_mut().unwrap().find_or_insert_with_slice(&path[1..], default)
+                } else {
+                    match *self.items.get_mut(&key).unwrap() {
+                        Value::Table(ref mut table) => {
+                            table.find_or_insert_with(&path[1..], default)
+                        }
+                        Value::Array(ref mut array) => {
+                            if array.is_empty() {
+                                array.push(Table::new_regular()).unwrap();
+                            }
+                            if ! array.is_inline() {
+                                if let Some(&mut Value::Table(ref mut table)) = array.last() {
+                                    table.find_or_insert_with_slice(&path[1..], default)
+                                } else {
+                                    unreachable!();
+                                }
+                            } else {
+                                Err(CreatePathError::InvalidScopeTable)
+                            }
+                        }
+                        _ => Err(CreatePathError::InvalidScopeTable),
+                    }
                 }
             }
             [] => {
@@ -193,7 +231,7 @@ impl<'a> Table<'a> {
             return Err(CreatePathError::InvalidScopeTable);
         }
         let value =
-            self.find_or_insert_with_slice(&path, || Value::Table(Table::new(false)))?;
+            self.find_or_insert_with_slice(&path, || Value::Table(Table::new(false, None)))?;
         match *value {
             Value::Table(ref mut table) => Ok(table),
             _ => unreachable!(),
@@ -272,7 +310,7 @@ impl<'a> Table<'a> {
         use self::TableItem::*;
         for item in self.order.iter().rev() {
             match *item {
-                Space(_) | Comment(_) | Newline(_) => {}
+                Space(_) | Comment(_) | Newline(_) | Scope(_) => {}
                 Entry { .. } => return false,
                 /// For inline tables
                 Comma => return true, 
@@ -291,6 +329,11 @@ impl<'a> Table<'a> {
             match *item {
                 Entry { .. } => {
                     last_was_entry = true;
+                }
+                Scope(_key) => {
+                    last_was_entry = false;
+                    // (since entries belong to their tables, this shouldn't have any 
+                    // negative effects)
                 }
                 Space(text) => {
                     if after_newline && first_space.is_none() {
@@ -406,9 +449,17 @@ impl<'a> Table<'a> {
         }
     }
 
+    /// Returns whether this table is inline.
+    pub fn is_inline(&self) -> bool {
+        self.inline
+    }
+
     /// Writes the TOML representation of this value to a string.
     pub fn write(&self, out: &mut String) {
         use self::TableItem::*;
+        if let Some(ref scope) = self.scope {
+            scope.write(out);
+        }
         if self.inline {
             out.push('{');
         }
@@ -418,6 +469,23 @@ impl<'a> Table<'a> {
                 Comment(text) => {
                     out.push('#');
                     out.push_str(text);
+                }
+                Scope(ref key) => {
+                    //TODO: Pass scope along in order to facilitate changed scopes from 
+                    // the loaded format
+                    match *self.items.get(key).expect("scope key not in table") {
+                        Value::Table(ref table) => {
+                            table.write(out);
+                        }
+                        Value::Array(ref array) => {
+                            if ! array.is_inline() {
+                                array.write(out);
+                            } else {
+                                panic!("Broken invariant: Scoped array is not array of tables");
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 Entry { key, before_eq, after_eq } => {
                     key.write(out);
@@ -431,10 +499,6 @@ impl<'a> Table<'a> {
         }
         if self.inline {
             out.push('}');
-        }
-        for scope in &self.visual_scopes {
-            scope.write(out);
-            self.find(scope.path()).unwrap().write(out);
         }
     }
 }

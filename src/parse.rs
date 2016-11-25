@@ -234,6 +234,7 @@ impl<'a> Parser<'a> {
                   -> Result<'a, ()> {
         use lexer::Token::*;
         use self::ErrorKind::*;
+        trace!("Reading scope");
         let mut was_key = false;
         let mut key_found = false;
         let mut closed = false;
@@ -295,13 +296,15 @@ impl<'a> Parser<'a> {
         if !closed {
             return self.err(UnfinishedScope { start: start });
         }
+        trace!("Read scope: {:?}", scope);
         Ok(())
     }
 
     fn read_array(&mut self, start: usize) -> Result<'a, Value<'a>> {
         use self::ErrorKind::*;
         use lexer::Token::*;
-        let mut array = Array::new();
+        trace!("Reading array");
+        let mut array = Array::new_inline();
         let mut is_reading_value = true;
         let mut was_comma = false;
         loop {
@@ -337,8 +340,8 @@ impl<'a> Parser<'a> {
                             return self.err(NonFinalComma { pos: pos });
                         }
                         let value = self.read_value(start)?;
-                        match array.push(value) {
-                            Ok(()) => {}
+                        match array.push_value(value) {
+                            Ok(_) => {}
                             Err(message) => {
                                 return self.err(WrongValueTypeInArray {
                                     start: start,
@@ -379,7 +382,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-
+        trace!("Read array: {:?}", array);
         Ok(Value::Array(array))
     }
 
@@ -389,6 +392,7 @@ impl<'a> Parser<'a> {
                          -> Result<'a, ()> {
         use self::ErrorKind::*;
         use lexer::Token::*;
+        trace!("Reading inline table");
         let mut reading_key = true;
         let mut was_comma = false;
         while let Some(res) = self.tokens.next() {
@@ -430,6 +434,7 @@ impl<'a> Parser<'a> {
                         reading_key = false;
                     }
                     (_, CurlyClose) => {
+                        trace!("Read table {:?}", table);
                         return Ok(());
                     }
                     (pos, _) => return self.err(InvalidTableItem { pos: pos }),
@@ -444,6 +449,7 @@ impl<'a> Parser<'a> {
                         reading_key = true;
                     }
                     (_, CurlyClose) => {
+                        trace!("Read table {:?}", table);
                         return Ok(());
                     }
                     (pos, _) => {
@@ -461,28 +467,31 @@ impl<'a> Parser<'a> {
     fn read_value(&mut self, start: usize) -> Result<'a, Value<'a>> {
         use self::ErrorKind::*;
         use lexer::Token::*;
+        trace!("Reading value");
         let next = self.next_or(UnfinishedValue { start: start })?;
-        match next {
-            (_, Int(text)) => Ok(Value::new_int(text)),
-            (_, Float(text)) => Ok(Value::new_float(text)),
+        let value = match next {
+            (_, Int(text)) => Value::new_int(text),
+            (_, Float(text)) => Value::new_float(text),
             (_, String { text, literal, multiline }) => {
-                Ok(Value::new_string(text, literal, multiline))
+                Value::new_string(text, literal, multiline)
             }
-            (_, Bool(value)) => Ok(Value::new_bool(value)),
-            (_, DateTime(text)) => Ok(Value::new_datetime(text)),
-            (pos, SingleBracketOpen) => Ok(self.read_array(pos)?),
+            (_, Bool(value)) => Value::new_bool(value),
+            (_, DateTime(text)) => Value::new_datetime(text),
+            (pos, SingleBracketOpen) => self.read_array(pos)?,
             (pos, CurlyOpen) => {
                 let mut table = Table::new_inline();
                 self.read_inline_table(pos, &mut table)?;
-                Ok(Value::Table(table))
+                Value::Table(table)
             }
             (pos, _) => {
-                self.err(InvalidValue {
+                return self.err(InvalidValue {
                     start: start,
                     pos: pos,
-                })
+                });
             }
-        }
+        };
+        trace!("Read value: {:?}", value);
+        Ok(value)
     }
 
     fn read_item
@@ -492,6 +501,7 @@ impl<'a> Parser<'a> {
          -> Result<'a, (Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>)> {
         use self::ErrorKind::*;
         use lexer::Token::*;
+        trace!("Reading item for key '{:?}'", key.to_string());
         let mut before_eq = None;
         let mut next = self.next_or(UnfinishedItem { start: start })?;
         if let Whitespace(text) = next.1 {
@@ -521,6 +531,7 @@ impl<'a> Parser<'a> {
 
         let value_start = self.peek_or(UnfinishedItem { start: start })?.0;
         let value = self.read_value(value_start)?;
+        trace!("Read item ({:?} = {:?})", key, value);
         Ok((key, before_eq, after_eq, value))
     }
 
@@ -544,6 +555,7 @@ impl<'a> Parser<'a> {
     fn read_table(&mut self, table: &mut Table<'a>) -> Result<'a, ()> {
         use lexer::Token::*;
         use self::ErrorKind::*;
+        trace!("Reading table");
         while self.tokens.peek().is_some() {
             match *self.tokens.peek().unwrap() {
                 Err(ref e) => {
@@ -564,6 +576,7 @@ impl<'a> Parser<'a> {
                     table.push_newline(text.starts_with('\r'));
                 }
                 (_, Comment(text)) => {
+                    trace!("Comment: #{}", text);
                     table.push_comment(text);
                 }
                 (pos, PlainKey(text)) => {
@@ -587,12 +600,14 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        trace!("Read table: {:?}", table);
         Ok(())
     }
 
     fn parse(mut self) -> Result<'a, Table<'a>> {
         use lexer::Token::*;
         use self::ErrorKind::*;
+        trace!("Parse: Starting...");
         let mut top_table = Table::new_regular();
         while let Some(res) = self.tokens.next() {
             match res? {
@@ -603,31 +618,63 @@ impl<'a> Parser<'a> {
                     top_table.push_newline(text.starts_with('\r'));
                 }
                 (pos, SingleBracketOpen) => {
-                    let mut scope = Scope::new();
+                    let mut scope = Scope::new(false);
                     self.read_scope(&mut scope, false, pos)?;
 
                     // TODO: Validate that the scope hasn't been used before
-                    {
-                        let mut table = match top_table.find_or_insert_table(scope.path()) {
-                            Err(CreatePathError::InvalidScopeTable) => {
-                                return self.err(InvalidScopePath);
-                            }
-                            Err(CreatePathError::EmptyPath) => {
-                                unreachable!();
-                            }
-                            Ok(table) => table
-                        };
-                        self.read_table(&mut table)?;
-                    }
-                    top_table.push_scope(scope);
-
+                    let mut table = match top_table.find_or_insert_table(scope.path()) {
+                        Err(CreatePathError::InvalidScopeTable) => {
+                            return self.err(InvalidScopePath);
+                        }
+                        Err(CreatePathError::EmptyPath) => {
+                            unreachable!();
+                        }
+                        Ok(table) => table
+                    };
+                    table.set_scope(scope);
+                    self.read_table(&mut table)?;
+                    
                 }
                 (pos, DoubleBracketOpen) => {
-                    let mut scope = Scope::new();
+                    let mut scope = Scope::new(true);
                     self.read_scope(&mut scope, true, pos)?;
-                    // let mut table = top_table.find_or_create_table(scope.path());
-
-                    // println!("Table: {:?}", table);
+                    
+                    let array = match top_table.find_or_insert_with(scope.path(), || {
+                        Array::new_of_tables()
+                    }) {
+                        Ok(array) => array,
+                        Err(CreatePathError::InvalidScopeTable) => {
+                            return self.err(InvalidScopePath);
+                        }
+                        Err(CreatePathError::EmptyPath) => {
+                            unreachable!();
+                        }
+                    };
+                    let mut array = match *array {
+                        Value::Array(ref mut array) => array,
+                        _ => { // TODO: Use different error here?
+                            return self.err(KeyDefinedTwice {
+                            pos: pos,
+                            original: pos, // TODO: Handle correctly?
+                        });
+                        }
+                    };
+                    let mut table = match array.push_value(Value::Table(Table::new_regular())) {
+                        Ok(table) => table,
+                        Err(message) => {
+                            return self.err(WrongValueTypeInArray {
+                                start: pos, // TODO: Find out if this is even relevant
+                                pos: pos,
+                                message: message,
+                            });
+                        }
+                    };
+                    let mut table = match *table {
+                        Value::Table(ref mut table) => table,
+                        _ => unreachable!(),
+                    };
+                    table.set_scope(scope);
+                    self.read_table(table)?;                    
                 }
                 (_, Comment(text)) => {
                     top_table.push_comment(text);
@@ -651,6 +698,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        trace!("Parse: Finished succesfully!");
         Ok(top_table)
     }
 }

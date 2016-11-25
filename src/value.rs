@@ -198,8 +198,8 @@ impl<'a> Value<'a> {
     }
 
     /// Returns reference to the array in this item (if valid).
-    pub fn array(&mut self) -> Option<&Array<'a>> {
-        if let Value::Array(ref mut array) = *self {
+    pub fn array(&self) -> Option<&Array<'a>> {
+        if let Value::Array(ref array) = *self {
             Some(array)
         } else {
             None
@@ -248,6 +248,33 @@ impl<'a> Value<'a> {
             Some(value)
         } else {
             None
+        }
+    }
+
+    /// Returns whether this value is a regular (non-inline) table.
+    pub fn is_noninline_table(&self) -> bool {
+        if let Value::Table(ref table) = *self {
+            ! table.is_inline()
+        } else {
+            false
+        }
+    }
+
+    /// Returns whether this is a regular (non-inline) array of tables.
+    pub fn is_noninline_array_of_tables(&self) -> bool {
+        if let Value::Array(ref array) = *self {
+            ! array.is_inline()
+        } else {
+            false
+        }
+    }
+
+    /// Returns whether this value is a table.
+    pub fn is_table(&self) -> bool {
+        if let Value::Table(_) = *self {
+            true
+        } else {
+            false
         }
     }
 

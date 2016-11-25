@@ -1,5 +1,6 @@
 
 use value::Value;
+use scope::Scope;
 use std::slice;
 
 /// A 'visual' item within a TOML array.
@@ -10,6 +11,7 @@ enum ArrayItem<'a> {
     /// An index into the contained items of the array.
     Item,
     Comma,
+    Scope(Scope<'a>),
 }
 
 /// A homogenous array of TOML values (+ the array's visual representation).
@@ -17,20 +19,22 @@ enum ArrayItem<'a> {
 pub struct Array<'a> {
     items: Vec<Value<'a>>,
     order: Vec<ArrayItem<'a>>,
+    /// Whether this is an inline (value-position) array or an array of tables.
+    is_inline: bool,
 }
 
 /// A protected interface for the `Array`.
 pub trait ArrayPrivate<'a> {
-    fn push(&mut self, value: Value<'a>) -> Result<(), String>;
+    fn push_value(&mut self, value: Value<'a>) -> Result<&mut Value<'a>, String>;
     fn push_space(&mut self, space: &'a str);
     fn push_comma(&mut self);
     fn push_comment(&mut self, comment: &'a str);
+    fn push_scope(&mut self, scope: Scope<'a>);
 }
 
 impl<'a> ArrayPrivate<'a> for Array<'a> {
-    /// Pushes a new value to the array.
-    /// Errors if the value is of a different type than the first element of the array.
-    fn push(&mut self, value: Value<'a>) -> Result<(), String> {
+    /// Pushes a value to the array format order.
+    fn push_value(&mut self, value: Value<'a>) -> Result<&mut Value<'a>, String> {
         if let Some(first) = self.items.get(0) {
             if !first.is_same_type(&value) {
                 return Err(format!("Attempted to insert a value of type {:?} into an array of \
@@ -39,9 +43,16 @@ impl<'a> ArrayPrivate<'a> for Array<'a> {
                                    first));
             }
         }
+        // Is this specifically a noninline array of tables? Check the type again.
+        if !self.is_inline && !value.is_table() {
+            return Err(format!(
+                "Attempted to insert a value of type {:?} into an array of tables", value
+            ));
+        }
         self.order.push(ArrayItem::Item);
         self.items.push(value);
-        Ok(())
+        let index = self.items.len()-1;
+        Ok(&mut self.items[index])
     }
 
     /// Pushes an amount of whitespace to the array format order.
@@ -54,20 +65,40 @@ impl<'a> ArrayPrivate<'a> for Array<'a> {
         self.order.push(ArrayItem::Comma);
     }
 
-    /// Pushes a comment and a newline (CR currently NOT handled) to the array format order.
+    /// Pushes a comment to the array format order.
     fn push_comment(&mut self, comment: &'a str) {
         self.order.push(ArrayItem::Comment(comment));
-        self.order.push(ArrayItem::Space("\n"));
+    }
+
+    /// Pushes a scope to the array format order.
+    fn push_scope(&mut self, scope: Scope<'a>) {
+        self.order.push(ArrayItem::Scope(scope))
     }
 }
 
 impl<'a> Array<'a> {
     /// Creates a new TOML array.
-    pub fn new() -> Array<'a> {
+    pub fn new_inline() -> Array<'a> {
         Array {
             items: Vec::new(),
             order: Vec::new(),
+            is_inline: true,
         }
+    }
+
+    /// Creates a TOML array that should contain tables.
+    pub fn new_of_tables() -> Array<'a> {
+        Array {
+            items: Vec::new(),
+            order: Vec::new(),
+            is_inline: false,
+        }
+    }
+
+    /// Returns whether this is an inline (value-position) array.
+    /// Example: `array = ["some", "values"]`.
+    pub fn is_inline(&self) -> bool {
+        self.is_inline
     }
 
     /// Returns the items of this array.
@@ -85,14 +116,60 @@ impl<'a> Array<'a> {
         self.items.is_empty()
     }
 
+    /// Returns the last element of this array.
+    pub fn last(&mut self) -> Option<&mut Value<'a>> {
+        if self.is_empty() {
+            None
+        } else {
+            let index = self.items.len() - 1;
+            Some(&mut self.items[index])
+        }
+    }
+
+    /// Returns whether the given value has the same type as the other elements of this array.
+    pub fn can_insert_type(&self, value: &Value) -> bool {
+        if let Some(first) = self.items.get(0) {
+            first.is_same_type(value)
+        } else {
+            true
+        }
+    }
+
+    /// Returns whether this array has a trailing comma.
+    fn has_trailing_comma(&self) -> bool {
+        for item in self.order.iter().rev() {
+            match *item {
+                ArrayItem::Comma => return true,
+                ArrayItem::Item => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Pushes a new value to the array and returns a reference to it.
+    /// Errors if the value is of a different type than the first element of the array.
+    /// TODO: This should be split into an internal and external function.
+    pub fn push<V: Into<Value<'a>>>(&mut self, value: V) -> Result<&mut Value<'a>, String> {
+        let value = value.into();
+        if self.is_inline && !self.has_trailing_comma() {
+            self.push_comma();
+            self.push_space(" ");
+        }
+        self.push_value(value)
+    }
+
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
         use self::ArrayItem::*;
-        out.push('[');
+        if self.is_inline {
+            out.push('[');
+        }
         let mut item_no = 0;
         for item in &self.order {
             match *item {
                 Space(text) => out.push_str(text),
+                Scope(ref scope) => scope.write(out),
                 Comment(text) => {
                     out.push('#');
                     out.push_str(text);
@@ -104,6 +181,8 @@ impl<'a> Array<'a> {
                 Comma => out.push(','),
             }
         }
-        out.push(']');
+        if self.is_inline {
+            out.push(']');
+        }
     }
 }

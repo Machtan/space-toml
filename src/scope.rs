@@ -15,14 +15,16 @@ enum ScopeItem<'a> {
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
     keys: Vec<Key<'a>>,
+    is_array: bool,
 }
 
 impl<'a> Scope<'a> {
     /// Creates a new scope.
-    pub fn new() -> Scope<'a> {
+    pub fn new(is_array: bool) -> Scope<'a> {
         Scope {
             ordering: Vec::new(),
             keys: Vec::new(),
+            is_array: is_array,
         }
     }
 
@@ -51,7 +53,7 @@ impl<'a> Scope<'a> {
     /// Writes this scope to a string in the TOML format.
     pub fn write(&self, out: &mut String) {
         use self::ScopeItem::*;
-        out.push('[');
+        out.push_str(if self.is_array {"[["} else {"["});
         for item in &self.ordering {
             match *item {
                 Dot => out.push('.'),
@@ -61,6 +63,6 @@ impl<'a> Scope<'a> {
                 }
             }
         }
-        out.push(']');
+        out.push_str(if self.is_array {"]]"} else {"]"});
     }
 }

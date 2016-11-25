@@ -1,6 +1,9 @@
 #![feature(slice_patterns)]
 #![deny(missing_docs)]
 //! Parses and edits TOML documents while preserving the formatting of the original document.
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 pub mod debug;
 
