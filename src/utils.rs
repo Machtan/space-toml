@@ -73,6 +73,9 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
     let mut chars = text.char_indices().peekable();
     if multiline {
         // Ignore first newline in multiline strings
+        if let Some(&(_, '\r')) = chars.peek() {
+            chars.next();
+        }
         if let Some(&(_, '\n')) = chars.peek() {
             chars.next();
         }
@@ -82,6 +85,10 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             match ch {
                 ch if ch.is_whitespace() => {
                     escaped_whitespace = true;
+                }
+                ch if escaped_whitespace => {
+                    string.push(ch);
+                    escaped = false;
                 }
                 'n' => {
                     string.push('\n');
@@ -119,10 +126,6 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     }
                     escaped = false;
                 }
-                ch if escaped_whitespace => {
-                    string.push(ch);
-                    escaped = false;
-                }
                 _ => panic!("Invalid escape character found when parsing (lexer error)"),
             }
         } else {
@@ -134,6 +137,7 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             }
         }
     }
+    trace!("Clean {:?} => {:?}", text, string);
 
     Cow::Owned(string)
 }

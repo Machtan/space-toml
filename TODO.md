@@ -1,12 +1,9 @@
 # Things that should be done
-- Implement `Error` for the error types (instead of using `show`)
+These are bound to be in a mostly-outdated state, so only use them as guidance
+- ~~Implement `Error` for the error types (instead of using `show`)~~
+    - Undo this (keep show/explain, but don't use that for the Display implementation)
 - Rename things prefixed with 'TOML'
 - Implement `Table.find_or_insert_array_of_tables`
-- Implement `Table.has_key`?
+- Implement `Table.contains_key`?
 - Handle parsing of too-big integer and float values
-- Handle the transformation of scope path segments from tables to arrays of tables (since either is valid, and more information might be gained later)...?
-    Eg. [bob.keys.name]
-    Where keys 
-    Nowait. It cannot change. Yays
-    Gotta look at this later when less tired...
 - Handle the formatting of scopes after moving tables with formatted scopes to another path.

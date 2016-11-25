@@ -300,6 +300,11 @@ impl<'a> Table<'a> {
         self.items.get_mut(&key.into())
     }
 
+    /// Returns whether the given key exists in the table.
+    pub fn contains_key<K: Into<Key<'a>>>(&self, key: K) -> bool {
+        self.items.contains_key(&key.into())
+    }
+
     /// Returns whether the table is empty. The table might still contain format items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()

@@ -135,6 +135,7 @@ macro_rules! simple_tests {
 macro_rules! test_valid {
     ( $name:ident : $toml:expr, $json:expr) => {
         pub mod $name {
+            extern crate env_logger;
             use super::{assert_can_lex, assert_format_preserved_on_write, compare_output, assert_data_preserved_on_lex, assert_can_parse};
            #[test]
             fn can_lex() {
@@ -148,16 +149,19 @@ macro_rules! test_valid {
 
             #[test]
             fn can_parse() {
+                let _ = env_logger::init();
                 assert_can_parse($toml);
             }
 
             #[test]
             fn parser_preserves_format() {
+                let _ = env_logger::init();
                 assert_format_preserved_on_write($toml);
             }
 
             #[test]
             fn parses_correctly() {
+                let _ = env_logger::init();
                 compare_output($toml, $json);
             }
         }
@@ -170,7 +174,7 @@ simple_tests!(hard_unicode: include_str!("../samples/hard_example_unicode.toml")
 simple_tests!(official: include_str!("../samples/official.toml"));
 simple_tests!(example: include_str!("../samples/example.toml"));
 
-/*pub mod valid {
+pub mod valid {
     pub use super::{assert_can_lex, assert_format_preserved_on_write, compare_output, assert_data_preserved_on_lex, assert_can_parse};
     test_valid!(array_empty:
        include_str!("valid/array-empty.toml"),
@@ -298,5 +302,5 @@ simple_tests!(example: include_str!("../samples/example.toml"));
     test_valid!(example_bom:
         include_str!("valid/example-bom.toml"),
         include_str!("valid/example.json"));
-}*/
+}
 
