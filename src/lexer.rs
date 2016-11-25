@@ -4,6 +4,8 @@ use debug;
 use std::result;
 use std::error;
 use std::fmt;
+use std::string;
+use std::char;
 
 type CharStream<'a> = Peekable<CharIndices<'a>>;
 
@@ -285,39 +287,39 @@ impl<'a> Tokens<'a> {
                         'b' | 't' | 'n' | 'f' | 'r' | '"' | '\\' => {
                             escaped = false;
                         }
-                        'u' => {
-                            for _ in 0..4 {
+                        c @ 'u' | c @ 'U' => {
+                            let pos = i;
+                            let mut num = string::String::new();
+                            let len = if c == 'u' {4} else {8};
+                            for _ in 0..len {
                                 if let Some((i, ch)) = self.chars.next() {
                                     match ch {
-                                        '0'...'9' | 'a'...'f' | 'A'...'F' => {},
+                                        '0'...'9' | 'a'...'f' | 'A'...'F' => num.push(ch),
                                         _ => {
                                             return self.err(InvalidEscapeCharacter {
-                                                start: self.start,
+                                                start: pos,
                                                 pos: i
                                             });
                                         },
                                     }
                                 } else {
-                                    break;
+                                    return self.err(InvalidEscapeCharacter {
+                                        start: pos,
+                                        pos: self.text.len(),
+                                    });
                                 }
                             }
-                            escaped = false;
-                        } 
-                        'U' => {
-                            for _ in 0..8 {
-                                if let Some((i, ch)) = self.chars.next() {
-                                    match ch {
-                                        '0'...'9' | 'a'...'f' | 'A'...'F' => {},
-                                        _ => {
-                                            return self.err(InvalidEscapeCharacter {
-                                                start: self.start,
-                                                pos: i
-                                            });
-                                        },
-                                    }
-                                } else {
-                                    break;
+                            
+                            if let Some(n) = u32::from_str_radix(&num, 16).ok() {
+                                if !char::from_u32(n).is_some() {
+                                    return self.err(InvalidUnicode {
+                                        pos: pos,
+                                    });
                                 }
+                            } else {
+                                return self.err(InvalidUnicode {
+                                    pos: pos,
+                                });
                             }
                             escaped = false;
                         }
@@ -682,6 +684,11 @@ pub enum ErrorKind {
         /// The byte index of the invalid underscore
         pos: usize,
     },
+    /// An unicode escape inside a string contained an invalid codepoint.
+    InvalidUnicode {
+        /// The byte index of the invalid unicode escape code.
+        pos: usize
+    }
 }
 
 /// An error found when lexing a TOML document.
@@ -748,6 +755,11 @@ impl<'a> fmt::Display for Error<'a> {
                 write!(output, "Underscore not after number at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
             },
+            InvalidUnicode { pos } => {
+                let (line, col) = debug::get_position(self.text, pos);
+                write!(output, "Invalid unicode escape value at {}:{} :", line, col)?;
+                debug::write_invalid_character(self.text, pos, output)
+            }
         }
     }
 }
