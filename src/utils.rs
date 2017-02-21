@@ -130,13 +130,13 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
                     escaped = false;
                 }
                 c @ 'u' | c @ 'U' => {
-                    let start = i+1;
-                    let len = if c == 'u' {4} else {8};
+                    let start = i + 1;
+                    let len = if c == 'u' { 4 } else { 8 };
                     for _ in 0..len {
                         chars.next().unwrap();
                     }
                     // The unicode hex parts must be ASCII chars (hopefully ;)
-                    let num = &text[start..start+len];
+                    let num = &text[start..start + len];
                     info!("Escaped unicode hex code: {:?}", num);
                     // This is validated by the lexer, see lexer.rs 'read_string'.
                     let unicode = char::from_u32(u32::from_str_radix(num, 16).unwrap()).unwrap();
@@ -154,10 +154,11 @@ pub fn clean_string<'a>(text: &'a str, literal: bool, multiline: bool) -> Cow<'a
             }
         }
     }
-    trace!("Clean (lit/mul: {}/{}) {:?} => {:?}", 
-        if literal {"t"} else {"f"}, 
-        if multiline {"t"} else {"f"}, 
-        text, string);
+    trace!("Clean (lit/mul: {}/{}) {:?} => {:?}",
+           if literal { "t" } else { "f" },
+           if multiline { "t" } else { "f" },
+           text,
+           string);
 
     Cow::Owned(string)
 }

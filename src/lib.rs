@@ -4,6 +4,12 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+/*#[macro_use]
+extern crate error_chain;
+
+mod errors {
+    error_chain! {}
+}*/
 
 pub mod debug;
 
@@ -15,13 +21,14 @@ mod scope;
 mod table;
 mod array;
 mod value;
+mod document;
 
 pub use lexer::{tokens, Tokens, Token};
 /// An error found when lexing a TOML document.
 pub type LexError<'a> = lexer::Error<'a>;
 /// The kinds of errors that can be found when lexing a TOML document.
 pub type LexerErrorKind = lexer::ErrorKind;
-pub use table::{CreatePathError, Table};
-pub use array::Array;
+pub use document::Document;
+pub use table::CreatePathError;
 pub use value::{Value, Int, Float, TomlString};
 pub use parse::{parse, Error, ErrorKind, Result};

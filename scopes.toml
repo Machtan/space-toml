@@ -1,0 +1,23 @@
+# This shows a new invariant:
+# Subtables of an AoT must be after the table.
+# Thus it would probably make sense to NOT make them part of a global format order.
+# ... yay
+# Awwww. But there can still be normal format items in between :/
+[[fruit]] # fruit(0)
+  name = "apple"
+
+  [fruit.physical] # fruit(0).physical
+    color = "red"
+    shape = "round"
+
+  [[fruit.variety]] # fruit(0).variety(0)
+    name = "red delicious"
+
+  [[fruit.variety]] # fruit(0).variety(0)
+    name = "granny smith"
+
+[[fruit]] # fruit(1)
+  name = "banana"
+
+  [[fruit.variety]] # fruit(1).variety(0)
+    name = "plantain"

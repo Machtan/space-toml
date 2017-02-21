@@ -1,7 +1,7 @@
 
 use std::borrow::{Borrow, Cow};
-use table::Table;
-use array::Array;
+use table::TableData;
+use array::ArrayData;
 use utils::{write_string, escape_string, clean_string};
 
 /// A TOML string value.
@@ -13,7 +13,7 @@ pub enum TomlString<'a> {
     Text {
         /// The text inside the quotes.
         text: &'a str,
-        /// Whether this is a literal string (`'`-quoted, with no escape characters 
+        /// Whether this is a literal string (`'`-quoted, with no escape characters
         /// allowed).
         literal: bool,
         /// Whether this is a multiline (triple-quoted) string.
@@ -113,9 +113,9 @@ pub enum Value<'a> {
     /// This is not validated and just given as a string. Use at your own risk.
     DateTime(&'a str),
     /// A table, regular or inlined
-    Table(Table<'a>),
+    Table(TableData<'a>),
     /// An array of values or tables
-    Array(Array<'a>),
+    Array(ArrayData<'a>),
 }
 
 /// A protected interface for `Value`.
@@ -171,7 +171,7 @@ impl<'a> Value<'a> {
     }
 
     /// Returns a reference to the table in this item (if valid).
-    pub fn table(&self) -> Option<&Table<'a>> {
+    pub fn table(&self) -> Option<&TableData<'a>> {
         if let Value::Table(ref table) = *self {
             Some(table)
         } else {
@@ -180,7 +180,7 @@ impl<'a> Value<'a> {
     }
 
     /// Returns a mutable reference to the table in this item (if valid).
-    pub fn table_mut(&mut self) -> Option<&mut Table<'a>> {
+    pub fn table_mut(&mut self) -> Option<&mut TableData<'a>> {
         if let Value::Table(ref mut table) = *self {
             Some(table)
         } else {
@@ -189,7 +189,7 @@ impl<'a> Value<'a> {
     }
 
     /// Returns a mutable reference to the array in this item (if valid).
-    pub fn array_mut(&mut self) -> Option<&mut Array<'a>> {
+    pub fn array_mut(&mut self) -> Option<&mut ArrayData<'a>> {
         if let Value::Array(ref mut array) = *self {
             Some(array)
         } else {
@@ -198,7 +198,7 @@ impl<'a> Value<'a> {
     }
 
     /// Returns reference to the array in this item (if valid).
-    pub fn array(&self) -> Option<&Array<'a>> {
+    pub fn array(&self) -> Option<&ArrayData<'a>> {
         if let Value::Array(ref array) = *self {
             Some(array)
         } else {
@@ -254,7 +254,7 @@ impl<'a> Value<'a> {
     /// Returns whether this value is a regular (non-inline) table.
     pub fn is_noninline_table(&self) -> bool {
         if let Value::Table(ref table) = *self {
-            ! table.is_inline()
+            !table.is_inline()
         } else {
             false
         }
@@ -263,7 +263,7 @@ impl<'a> Value<'a> {
     /// Returns whether this is a regular (non-inline) array of tables.
     pub fn is_noninline_array_of_tables(&self) -> bool {
         if let Value::Array(ref array) = *self {
-            ! array.is_inline()
+            !array.is_inline()
         } else {
             false
         }
@@ -284,8 +284,8 @@ impl<'a> Value<'a> {
     // Float(Float<'a>),
     // This is not validated and just given as a string. Use at your own risk.
     // DateTime(&'a str),
-    // Table(Table<'a>),
-    // Array(Array<'a>),
+    // Table(TableData<'a>),
+    // Array(ArrayData<'a>),
 
     /// Writes this TOML value to a string.
     pub fn write(&self, out: &mut String) {
@@ -297,13 +297,7 @@ impl<'a> Value<'a> {
             String(TomlString::User(ref text)) => {
                 out.push_str(&escape_string(text.borrow()));
             }
-            Bool(b) => {
-                out.push_str(if b {
-                    "true"
-                } else {
-                    "false"
-                })
-            }
+            Bool(b) => out.push_str(if b { "true" } else { "false" }),
             DateTime(text) => out.push_str(text),
             Int(self::Int::Text(text)) => out.push_str(text),
             Int(self::Int::Value(v)) => out.push_str(&format!("{}", v)),
@@ -333,8 +327,8 @@ impl<'a> From<String> for Value<'a> {
     }
 }
 
-impl<'a> From<Table<'a>> for Value<'a> {
-    fn from(other: Table<'a>) -> Value<'a> {
+impl<'a> From<TableData<'a>> for Value<'a> {
+    fn from(other: TableData<'a>) -> Value<'a> {
         Value::Table(other)
     }
 }
@@ -363,8 +357,8 @@ impl<'a> From<f64> for Value<'a> {
     }
 }
 
-impl<'a> From<Array<'a>> for Value<'a> {
-    fn from(other: Array<'a>) -> Value<'a> {
+impl<'a> From<ArrayData<'a>> for Value<'a> {
+    fn from(other: ArrayData<'a>) -> Value<'a> {
         Value::Array(other)
     }
 }

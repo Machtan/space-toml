@@ -47,7 +47,10 @@ pub fn show_unclosed(text: &str, start: usize) -> io::Result<()> {
 }
 
 /// Shows the position of an invalid character.
-pub fn write_invalid_character<O: fmt::Write>(text: &str, pos: usize, output: &mut O) -> fmt::Result {
+pub fn write_invalid_character<O: fmt::Write>(text: &str,
+                                              pos: usize,
+                                              output: &mut O)
+                                              -> fmt::Result {
     let (line, col) = get_position(text, pos);
     let line_text = text.lines().skip(line - 1).next().unwrap();
     writeln!(output, "{}", line_text)?;

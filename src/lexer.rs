@@ -103,7 +103,10 @@ impl<'a> Tokens<'a> {
 
     /// Returns an error with the given kind.
     fn err(&self, kind: ErrorKind) -> Result<'a> {
-        Err(Error { text: self.text, kind: kind })
+        Err(Error {
+            text: self.text,
+            kind: kind,
+        })
     }
 
     /// Reads a plain key.
@@ -148,11 +151,7 @@ impl<'a> Tokens<'a> {
         let start = self.start;
         self.start += 1;
         // Only check for array of tables when in key scope
-        let ch = if open {
-            '['
-        } else {
-            ']'
-        };
+        let ch = if open { '[' } else { ']' };
         if let LexerScope::Key = self.scope {
             if self.peek_is(ch) {
                 self.chars.next(); // eat it
@@ -227,19 +226,19 @@ impl<'a> Tokens<'a> {
                     self.start = i + 3;
                     return Ok((start,
                                String {
-                        text: part,
-                        literal: true,
-                        multiline: true,
-                    }));
+                                   text: part,
+                                   literal: true,
+                                   multiline: true,
+                               }));
                 } else if ch == '\'' && (!multiline) {
                     let part = &self.text[self.start + 1..i];
                     self.start = i + 1;
                     return Ok((start,
                                String {
-                        text: part,
-                        literal: true,
-                        multiline: false,
-                    }));
+                                   text: part,
+                                   literal: true,
+                                   multiline: false,
+                               }));
                 }
             }
             self.err(UnclosedLiteral { start: self.start })
@@ -253,19 +252,19 @@ impl<'a> Tokens<'a> {
                         self.start = i + 3;
                         return Ok((start,
                                    String {
-                            text: part,
-                            literal: false,
-                            multiline: true,
-                        }));
+                                       text: part,
+                                       literal: false,
+                                       multiline: true,
+                                   }));
                     } else if ch == '"' && (!multiline) {
                         let part = &self.text[self.start + 1..i];
                         self.start = i + 1;
                         return Ok((start,
                                    String {
-                            text: part,
-                            literal: false,
-                            multiline: false,
-                        }));
+                                       text: part,
+                                       literal: false,
+                                       multiline: false,
+                                   }));
                     } else if ch == '\\' {
                         escaped = true;
                     }
@@ -290,7 +289,7 @@ impl<'a> Tokens<'a> {
                         c @ 'u' | c @ 'U' => {
                             let pos = i;
                             let mut num = string::String::new();
-                            let len = if c == 'u' {4} else {8};
+                            let len = if c == 'u' { 4 } else { 8 };
                             for _ in 0..len {
                                 if let Some((i, ch)) = self.chars.next() {
                                     match ch {
@@ -298,9 +297,9 @@ impl<'a> Tokens<'a> {
                                         _ => {
                                             return self.err(InvalidEscapeCharacter {
                                                 start: pos,
-                                                pos: i
+                                                pos: i,
                                             });
-                                        },
+                                        }
                                     }
                                 } else {
                                     return self.err(InvalidEscapeCharacter {
@@ -309,17 +308,13 @@ impl<'a> Tokens<'a> {
                                     });
                                 }
                             }
-                            
+
                             if let Some(n) = u32::from_str_radix(&num, 16).ok() {
                                 if !char::from_u32(n).is_some() {
-                                    return self.err(InvalidUnicode {
-                                        pos: pos,
-                                    });
+                                    return self.err(InvalidUnicode { pos: pos });
                                 }
                             } else {
-                                return self.err(InvalidUnicode {
-                                    pos: pos,
-                                });
+                                return self.err(InvalidUnicode { pos: pos });
                             }
                             escaped = false;
                         }
@@ -358,10 +353,7 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads an integer.
-    fn read_int(&mut self,
-                mut was_number: bool,
-                mut datetime_possible: bool)
-                -> Result<'a> {
+    fn read_int(&mut self, mut was_number: bool, mut datetime_possible: bool) -> Result<'a> {
         use self::Token::*;
         use self::ErrorKind::*;
         let start = self.start;
@@ -415,10 +407,7 @@ impl<'a> Tokens<'a> {
     }
 
     /// Reads a floating point number.
-    fn read_float(&mut self,
-                  mut exponent_found: bool,
-                  mut was_number: bool)
-                  -> Result<'a> {
+    fn read_float(&mut self, mut exponent_found: bool, mut was_number: bool) -> Result<'a> {
         use self::Token::*;
         use self::ErrorKind::*;
         let start = self.start;
@@ -522,48 +511,48 @@ impl<'a> Tokens<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum Token<'a> {
     /// A sequence of TOML whitespace (space or tab characters).
-    Whitespace(&'a str), 
-     /// `[`
+    Whitespace(&'a str),
+    /// `[`
     SingleBracketOpen,
     /// `[[`
-    DoubleBracketOpen, 
+    DoubleBracketOpen,
     /// `]`
-    SingleBracketClose, 
+    SingleBracketClose,
     /// `]]`
-    DoubleBracketClose, 
+    DoubleBracketClose,
     /// `{`
-    CurlyOpen, 
+    CurlyOpen,
     /// `}`
-    CurlyClose, 
+    CurlyClose,
     /// `# a TOML comment without a newline`
-    Comment(&'a str), 
+    Comment(&'a str),
     /// `=`
-    Equals, 
+    Equals,
     /// `,`
-    Comma, 
+    Comma,
     /// `.`
-    Dot, 
+    Dot,
     /// A TOML newline sequence (`\r\n` or `\n`, like in Rust)
-    Newline(&'a str), 
+    Newline(&'a str),
     /// `this = "An unquoted (or 'plain') key"`
-    PlainKey(&'a str), 
+    PlainKey(&'a str),
     /// This can represent either a string value, or a quoted table key.
     ///
-    /// Keys are valid in any of the given string formats, in addition to the 'plain' 
+    /// Keys are valid in any of the given string formats, in addition to the 'plain'
     /// (unquoted) version.
-    /// 
+    ///
     /// ```toml
     /// 'A quoted key' = [
-    ///     "Or a \t escaped string", 
-    ///     'a literal string', 
-    ///     """Or the 
-    ///     multiline variants""", 
+    ///     "Or a \t escaped string",
+    ///     'a literal string',
+    ///     """Or the
+    ///     multiline variants""",
     ///     '''etc.''',
     /// ]
     /// ```
-    String { 
+    String {
         /// The text of the string. Escape characters have not been converted
-        text: &'a str, 
+        text: &'a str,
         /// Whether this is a `'literal'` string (single-quoted, with no escape sequences)
         literal: bool,
         /// Whether this is a `"""multi-line string"""`
@@ -627,32 +616,32 @@ pub enum ErrorKind {
     /// The character at this position is not a valid whitespace character by the TOML definition.
     InvalidWhitespace {
         /// The byte index of the invalid character
-        pos: usize, 
+        pos: usize,
     },
     /// A literal string starting here was not closed.
     UnclosedLiteral {
         /// The byte index where the string literal started (')
-        start: usize, 
+        start: usize,
     },
     /// A regular string starting here was not closed.
     UnclosedString {
         /// The byte index where the string started (")
-        start: usize, 
+        start: usize,
     },
     /// A closing brace was found outside an open scope.
     UnmatchedClosingBrace {
         /// The byte index where the brace was found (])
-        pos: usize, 
+        pos: usize,
     },
     /// A character that isn't valid for a key was found inside one.
     InvalidKeyCharacter {
         /// The byte index of the invalid character
-        pos: usize, 
+        pos: usize,
     },
     /// A character that isn't valid in a value was found inside one.
     InvalidValueCharacter {
         /// The byte index where the value starts (eg, the start of the array/inline table)
-        start: usize, 
+        start: usize,
         /// The byte index where the invalid token starts
         pos: usize,
     },
@@ -687,8 +676,8 @@ pub enum ErrorKind {
     /// An unicode escape inside a string contained an invalid codepoint.
     InvalidUnicode {
         /// The byte index of the invalid unicode escape code.
-        pos: usize
-    }
+        pos: usize,
+    },
 }
 
 /// An error found when lexing a TOML document.
@@ -697,7 +686,7 @@ pub struct Error<'a> {
     /// What kind of error this is.
     pub kind: ErrorKind,
     /// The text that was being parsed.
-    pub text: &'a str
+    pub text: &'a str,
 }
 
 impl<'a> fmt::Display for Error<'a> {
@@ -754,7 +743,7 @@ impl<'a> fmt::Display for Error<'a> {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Underscore not after number at {}:{} :", line, col)?;
                 debug::write_invalid_character(self.text, pos, output)
-            },
+            }
             InvalidUnicode { pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 write!(output, "Invalid unicode escape value at {}:{} :", line, col)?;

@@ -7,12 +7,12 @@ use space_toml::{Value, Table};
 
 use std::env;
 use std::process;
-use std::io::{Read};
+use std::io::Read;
 use std::fs::File;
 use std::collections::BTreeMap;
 
 pub fn to_json(toml: &Value) -> Json {
-    use space_toml::Value::*;    
+    use space_toml::Value::*;
     fn doit(s: &str, json: Json) -> Json {
         let mut map = BTreeMap::new();
         map.insert(format!("{}", "type"), Json::String(format!("{}", s)));
@@ -23,13 +23,20 @@ pub fn to_json(toml: &Value) -> Json {
         Value::String(ref s) => {
             //println!("Converting string {:?} to JSON", s);
             doit("string", Json::String(s.clean().to_string()))
-        },
+        }
         Int(ref i) => doit("integer", Json::String(format!("{}", i.value()))),
-        Float(ref f) => doit("float", Json::String({
-            let s = format!("{:.15}", f.value());
-            let s = format!("{}", s.trim_right_matches('0'));
-            if s.ends_with(".") {format!("{}0", s)} else {s}
-        })),
+        Float(ref f) => {
+            doit("float",
+                 Json::String({
+                     let s = format!("{:.15}", f.value());
+                     let s = format!("{}", s.trim_right_matches('0'));
+                     if s.ends_with(".") {
+                         format!("{}0", s)
+                     } else {
+                         s
+                     }
+                 }))
+        }
         Bool(ref b) => doit("bool", Json::String(format!("{}", b))),
         DateTime(ref s) => doit("datetime", Json::String(s.to_string())),
         Array(ref arr) => {
@@ -38,11 +45,13 @@ pub fn to_json(toml: &Value) -> Json {
                 _ => false,
             };
             let json = Json::Array(arr.iter().map(to_json).collect());
-            if is_table {json} else {doit("array", json)}
+            if is_table { json } else { doit("array", json) }
         }
-        Table(ref table) => Json::Object(table.iter().map(|(k, v)| {
-            (k.to_string(), to_json(v))
-        }).collect()),
+        Table(ref table) => {
+            Json::Object(table.iter()
+                .map(|(k, v)| (k.to_string(), to_json(v)))
+                .collect())
+        }
     }
 }
 
@@ -86,10 +95,8 @@ fn main() {
     table.write(&mut output);
     println!("{}", output);
 
-    assert!(output == toml,
-            "======== expected =======\n{}",
-            toml);
-    
+    assert!(output == toml, "======== expected =======\n{}", toml);
+
     let json = Json::from_str(&json).expect("JSON parsing failed");
     let toml_json = serialize_json(&table);
     assert!(json == toml_json,

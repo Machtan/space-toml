@@ -9,6 +9,7 @@ version = "0.1.0"
 [dependencies]
 env_logger = "0.3"
 log = "0.3"
+error-chain = "0.7.1"
 
 [dev-dependencies]
 rustc-serialize = "0.3"

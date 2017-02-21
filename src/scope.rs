@@ -1,5 +1,6 @@
 
 use key::Key;
+use std::iter::FromIterator;
 
 /// A format item for a TOML scope (table or array of tables).
 #[derive(Debug, Clone)]
@@ -15,16 +16,14 @@ enum ScopeItem<'a> {
 pub struct Scope<'a> {
     ordering: Vec<ScopeItem<'a>>,
     keys: Vec<Key<'a>>,
-    is_array: bool,
 }
 
 impl<'a> Scope<'a> {
     /// Creates a new scope.
-    pub fn new(is_array: bool) -> Scope<'a> {
+    pub fn new() -> Scope<'a> {
         Scope {
             ordering: Vec::new(),
             keys: Vec::new(),
-            is_array: is_array,
         }
     }
 
@@ -51,9 +50,9 @@ impl<'a> Scope<'a> {
     }
 
     /// Writes this scope to a string in the TOML format.
-    pub fn write(&self, out: &mut String) {
+    pub fn write(&self, out: &mut String, is_array: bool) {
         use self::ScopeItem::*;
-        out.push_str(if self.is_array {"[["} else {"["});
+        out.push_str(if is_array { "[[" } else { "[" });
         for item in &self.ordering {
             match *item {
                 Dot => out.push('.'),
@@ -63,6 +62,30 @@ impl<'a> Scope<'a> {
                 }
             }
         }
-        out.push_str(if self.is_array {"]]"} else {"]"});
+        out.push_str(if is_array { "]]" } else { "]" });
+    }
+}
+
+impl<'a> FromIterator<Key<'a>> for Scope<'a> {
+    fn from_iter<T>(iter: T) -> Self
+        where T: IntoIterator<Item = Key<'a>>
+    {
+        let mut scope = Scope::new();
+        for key in iter {
+            scope.push_key(key.clone());
+        }
+        scope
+    }
+}
+
+impl<'a: 'b, 'b> FromIterator<&'b Key<'a>> for Scope<'a> {
+    fn from_iter<T>(iter: T) -> Self
+        where T: IntoIterator<Item = &'b Key<'a>>
+    {
+        let mut scope = Scope::new();
+        for key in iter {
+            scope.push_key((*key).clone());
+        }
+        scope
     }
 }

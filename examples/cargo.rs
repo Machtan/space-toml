@@ -1,9 +1,9 @@
 extern crate space_toml;
 
-use space_toml::{Table};
+use space_toml::Table;
 use std::env;
 use std::process;
-use std::io::{Read};
+use std::io::Read;
 use std::fs::File;
 
 fn main() {
@@ -19,11 +19,12 @@ fn main() {
     let mut table = space_toml::parse(&source).expect("Could not read TOML");
     {
         // Ensure that we don't borrow the table for too long
-        let mut dependencies = table.find_or_insert_table(&["dependencies"]).expect("Invalid file structure");
+        let mut dependencies = table.find_or_insert_table(&["dependencies"])
+            .expect("Invalid file structure");
         let mut dep = Table::new_inline();
         dep.insert("version", env!("CARGO_PKG_VERSION"));
         dependencies.insert("space_toml", dep);
-        
+
         let mut dep = Table::new_inline();
         dep.insert("path", "../rsdl2");
         dependencies.insert("rsdl2", dep);

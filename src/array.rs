@@ -1,6 +1,5 @@
 
 use value::Value;
-use scope::Scope;
 use std::slice;
 
 /// A 'visual' item within a TOML array.
@@ -11,75 +10,21 @@ enum ArrayItem<'a> {
     /// An index into the contained items of the array.
     Item,
     Comma,
-    Scope(Scope<'a>),
 }
 
 /// A homogenous array of TOML values (+ the array's visual representation).
 #[derive(Debug)]
-pub struct Array<'a> {
+pub struct ArrayData<'a> {
     items: Vec<Value<'a>>,
     order: Vec<ArrayItem<'a>>,
     /// Whether this is an inline (value-position) array or an array of tables.
     is_inline: bool,
 }
 
-/// A protected interface for the `Array`.
-pub trait ArrayPrivate<'a> {
-    fn push_value(&mut self, value: Value<'a>) -> Result<&mut Value<'a>, String>;
-    fn push_space(&mut self, space: &'a str);
-    fn push_comma(&mut self);
-    fn push_comment(&mut self, comment: &'a str);
-    fn push_scope(&mut self, scope: Scope<'a>);
-}
-
-impl<'a> ArrayPrivate<'a> for Array<'a> {
-    /// Pushes a value to the array format order.
-    fn push_value(&mut self, value: Value<'a>) -> Result<&mut Value<'a>, String> {
-        if let Some(first) = self.items.get(0) {
-            if !first.is_same_type(&value) {
-                return Err(format!("Attempted to insert a value of type {:?} into an array of \
-                                    type {:?}",
-                                   value,
-                                   first));
-            }
-        }
-        // Is this specifically a noninline array of tables? Check the type again.
-        if !self.is_inline && !value.is_table() {
-            return Err(format!(
-                "Attempted to insert a value of type {:?} into an array of tables", value
-            ));
-        }
-        self.order.push(ArrayItem::Item);
-        self.items.push(value);
-        let index = self.items.len()-1;
-        Ok(&mut self.items[index])
-    }
-
-    /// Pushes an amount of whitespace to the array format order.
-    fn push_space(&mut self, space: &'a str) {
-        self.order.push(ArrayItem::Space(space));
-    }
-
-    /// Pushes a comma to the array format order.
-    fn push_comma(&mut self) {
-        self.order.push(ArrayItem::Comma);
-    }
-
-    /// Pushes a comment to the array format order.
-    fn push_comment(&mut self, comment: &'a str) {
-        self.order.push(ArrayItem::Comment(comment));
-    }
-
-    /// Pushes a scope to the array format order.
-    fn push_scope(&mut self, scope: Scope<'a>) {
-        self.order.push(ArrayItem::Scope(scope))
-    }
-}
-
-impl<'a> Array<'a> {
+impl<'a> ArrayData<'a> {
     /// Creates a new TOML array.
-    pub fn new_inline() -> Array<'a> {
-        Array {
+    pub fn new_inline() -> ArrayData<'a> {
+        ArrayData {
             items: Vec::new(),
             order: Vec::new(),
             is_inline: true,
@@ -87,8 +32,8 @@ impl<'a> Array<'a> {
     }
 
     /// Creates a TOML array that should contain tables.
-    pub fn new_of_tables() -> Array<'a> {
-        Array {
+    pub fn new_of_tables() -> ArrayData<'a> {
+        ArrayData {
             items: Vec::new(),
             order: Vec::new(),
             is_inline: false,
@@ -104,6 +49,41 @@ impl<'a> Array<'a> {
     /// Returns the items of this array.
     pub fn items(&self) -> &Vec<Value<'a>> {
         &self.items
+    }
+
+    pub fn push_value(&mut self, value: Value<'a>) -> Result<&mut Value<'a>, String> {
+        if let Some(first) = self.items.get(0) {
+            if !first.is_same_type(&value) {
+                return Err(format!("Attempted to insert a value of type {:?} into an array of \
+                                    type {:?}",
+                                   value,
+                                   first));
+            }
+        }
+        // Is this specifically a noninline array of tables? Check the type again.
+        if !self.is_inline && !value.is_table() {
+            return Err(format!("Attempted to insert a value of type {:?} into an array of tables",
+                               value));
+        }
+        self.order.push(ArrayItem::Item);
+        self.items.push(value);
+        let index = self.items.len() - 1;
+        Ok(&mut self.items[index])
+    }
+
+    /// Pushes an amount of whitespace to the array format order.
+    pub fn push_space(&mut self, space: &'a str) {
+        self.order.push(ArrayItem::Space(space));
+    }
+
+    /// Pushes a comma to the array format order.
+    pub fn push_comma(&mut self) {
+        self.order.push(ArrayItem::Comma);
+    }
+
+    /// Pushes a comment to the array format order.
+    pub fn push_comment(&mut self, comment: &'a str) {
+        self.order.push(ArrayItem::Comment(comment));
     }
 
     /// Returns an iterator over the items in this array.
@@ -169,7 +149,6 @@ impl<'a> Array<'a> {
         for item in &self.order {
             match *item {
                 Space(text) => out.push_str(text),
-                Scope(ref scope) => scope.write(out),
                 Comment(text) => {
                     out.push('#');
                     out.push_str(text);

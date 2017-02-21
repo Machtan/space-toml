@@ -5,15 +5,16 @@ use std::result;
 use std::error;
 
 use lexer::{self, Token, Tokens};
+use document::{Document, Table, TablePrivate, DocumentPrivate};
 use key::{Key, KeyPrivate};
-use table::{Table, TablePrivate, CreatePathError};
+use table::{TableData, CreatePathError};
 use scope::Scope;
-use array::{Array, ArrayPrivate};
+use array::ArrayData;
 use value::{Value, ValuePrivate};
 use debug;
 
 /// Parses the given text as a TOML document and returns the top-level table for the document.
-pub fn parse<'a>(text: &'a str) -> Result<'a, Table> {
+pub fn parse<'a>(text: &'a str) -> Result<'a, Document<'a>> {
     Parser::new(text).parse()
 }
 
@@ -129,13 +130,12 @@ impl<'a> Error<'a> {
     }
 }
 
+// TODO: make this a different function again
 impl<'a> fmt::Display for Error<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ErrorKind::*;
         match self.kind {
-            Lex(ref err) => {
-                err.fmt(f)
-            }
+            Lex(ref err) => err.fmt(f),
             InvalidScope { start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
                 writeln!(f, "Invalid scope found at {}:{} :", line, col)?;
@@ -183,7 +183,10 @@ impl<'a> fmt::Display for Error<'a> {
             }
             WrongValueTypeInArray { ref message, start: _start, pos } => {
                 let (line, col) = debug::get_position(self.text, pos);
-                writeln!(f, "Value of invalid type found in array at {}:{} :", line, col)?;
+                writeln!(f,
+                         "Value of invalid type found in array at {}:{} :",
+                         line,
+                         col)?;
                 writeln!(f, "{}", message)?;
                 debug::write_invalid_character(self.text, pos, f)
             }
@@ -205,7 +208,7 @@ impl<'a> error::Error for Error<'a> {
         use self::ErrorKind::*;
         match self.kind {
             Lex(ref err) => err.description(),
-            _ => "An error found while parsing TOML"
+            _ => "An error found while parsing TOML",
         }
     }
 }
@@ -219,7 +222,10 @@ struct Parser<'a> {
 }
 impl<'a> Parser<'a> {
     fn new(text: &'a str) -> Parser<'a> {
-        Parser { text: text, tokens: lexer::tokens(text).peekable() }
+        Parser {
+            text: text,
+            tokens: lexer::tokens(text).peekable(),
+        }
     }
 
     /// Returns an error of the given kind.
@@ -227,11 +233,7 @@ impl<'a> Parser<'a> {
         Err(Error::new(self.text, kind))
     }
 
-    fn read_scope(&mut self,
-                  scope: &mut Scope<'a>,
-                  array: bool,
-                  start: usize)
-                  -> Result<'a, ()> {
+    fn read_scope(&mut self, scope: &mut Scope<'a>, array: bool, start: usize) -> Result<'a, ()> {
         use lexer::Token::*;
         use self::ErrorKind::*;
         trace!("Reading scope");
@@ -304,7 +306,7 @@ impl<'a> Parser<'a> {
         use self::ErrorKind::*;
         use lexer::Token::*;
         trace!("Reading array");
-        let mut array = Array::new_inline();
+        let mut array = ArrayData::new_inline();
         let mut is_reading_value = true;
         let mut was_comma = false;
         loop {
@@ -386,10 +388,7 @@ impl<'a> Parser<'a> {
         Ok(Value::Array(array))
     }
 
-    fn read_inline_table(&mut self,
-                         start: usize,
-                         table: &mut Table<'a>)
-                         -> Result<'a, ()> {
+    fn read_inline_table(&mut self, start: usize, table: &mut TableData<'a>) -> Result<'a, ()> {
         use self::ErrorKind::*;
         use lexer::Token::*;
         trace!("Reading inline table");
@@ -472,14 +471,12 @@ impl<'a> Parser<'a> {
         let value = match next {
             (_, Int(text)) => Value::new_int(text),
             (_, Float(text)) => Value::new_float(text),
-            (_, String { text, literal, multiline }) => {
-                Value::new_string(text, literal, multiline)
-            }
+            (_, String { text, literal, multiline }) => Value::new_string(text, literal, multiline),
             (_, Bool(value)) => Value::new_bool(value),
             (_, DateTime(text)) => Value::new_datetime(text),
             (pos, SingleBracketOpen) => self.read_array(pos)?,
             (pos, CurlyOpen) => {
-                let mut table = Table::new_inline();
+                let mut table = TableData::new_inline();
                 self.read_inline_table(pos, &mut table)?;
                 Value::Table(table)
             }
@@ -494,11 +491,10 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
-    fn read_item
-        (&mut self,
-         start: usize,
-         key: Key<'a>)
-         -> Result<'a, (Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>)> {
+    fn read_item(&mut self,
+                 start: usize,
+                 key: Key<'a>)
+                 -> Result<'a, (Key<'a>, Option<&'a str>, Option<&'a str>, Value<'a>)> {
         use self::ErrorKind::*;
         use lexer::Token::*;
         trace!("Reading item for key '{:?}'", key.to_string());
@@ -548,11 +544,11 @@ impl<'a> Parser<'a> {
                 Err(ref e) => Err(Error::from(e.clone())),
                 Ok(token) => Ok(token),
             };
-        } 
+        }
         self.err(err)
     }
 
-    fn read_table(&mut self, table: &mut Table<'a>) -> Result<'a, ()> {
+    fn read_table(&mut self, table: &mut TableData<'a>) -> Result<'a, ()> {
         use lexer::Token::*;
         use self::ErrorKind::*;
         trace!("Reading table");
@@ -604,85 +600,95 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse(mut self) -> Result<'a, Table<'a>> {
+    fn parse(mut self) -> Result<'a, Document<'a>> {
         use lexer::Token::*;
         use self::ErrorKind::*;
         trace!("Parse: Starting...");
-        let mut top_table = Table::new_regular();
+        let mut document = Document::new();
         while let Some(res) = self.tokens.next() {
             match res? {
                 (_, Whitespace(text)) => {
-                    top_table.push_space(text);
+                    document.push_space_unchecked(text);
                 }
                 (_, Newline(text)) => {
-                    top_table.push_newline(text.starts_with('\r'));
+                    let newline = match text {
+                        "\n" => ::document::Newline::Lf,
+                        "\r\n" => ::document::Newline::CrLf,
+                        _ => unreachable!(),
+                    };
+                    document.push_newline(newline);
                 }
                 (pos, SingleBracketOpen) => {
-                    let mut scope = Scope::new(false);
+                    let mut scope = Scope::new();
                     self.read_scope(&mut scope, false, pos)?;
 
                     // TODO: Validate that the scope hasn't been used before
-                    let mut table = match top_table.find_or_insert_table(scope.path()) {
-                        Err(CreatePathError::InvalidScopeTable) => {
-                            return self.err(InvalidScopePath);
-                        }
-                        Err(CreatePathError::EmptyPath) => {
-                            unreachable!();
-                        }
-                        Ok(table) => table
-                    };
-                    table.set_scope(scope);
-                    self.read_table(&mut table)?;
-                    
+                    {
+                        let mut table = match document.find_or_insert_table(scope.path()) {
+                            Err(_) => {
+                                return self.err(InvalidScopePath);
+                            }
+                            Ok(table) => table,
+                        };
+                        self.read_table(&mut table.data())?;
+                    }
+                    document.push_table_scope(scope);
                 }
                 (pos, DoubleBracketOpen) => {
-                    let mut scope = Scope::new(true);
+                    let mut scope = Scope::new();
                     self.read_scope(&mut scope, true, pos)?;
-                    
-                    let array = match top_table.find_or_insert_with(scope.path(), || {
-                        Array::new_of_tables()
-                    }) {
-                        Ok(array) => array,
-                        Err(CreatePathError::InvalidScopeTable) => {
-                            return self.err(InvalidScopePath);
-                        }
-                        Err(CreatePathError::EmptyPath) => {
-                            unreachable!();
-                        }
-                    };
-                    let mut array = match *array {
-                        Value::Array(ref mut array) => array,
-                        _ => { // TODO: Use different error here?
-                            return self.err(KeyDefinedTwice {
-                            pos: pos,
-                            original: pos, // TODO: Handle correctly?
-                        });
-                        }
-                    };
-                    let mut table = match array.push_value(Value::Table(Table::new_regular())) {
-                        Ok(table) => table,
-                        Err(message) => {
-                            return self.err(WrongValueTypeInArray {
-                                start: pos, // TODO: Find out if this is even relevant
-                                pos: pos,
-                                message: message,
-                            });
-                        }
-                    };
-                    let mut table = match *table {
-                        Value::Table(ref mut table) => table,
-                        _ => unreachable!(),
-                    };
-                    table.set_scope(scope);
-                    self.read_table(table)?;                    
+                    {
+                        let (last, rest) = scope.path().split_last().unwrap();
+                        let mut table = if !rest.is_empty() {
+                            match document.find_or_insert_table(rest) {
+                                Ok(table) => table,
+                                Err(_) => {
+                                    //TODO Invalid Scope
+                                    panic!("Invalid Scope");
+                                }
+                            }
+                        } else {
+                            document.root()
+                        };
+                        let mut array = match *table.get_or_insert_with(last.clone(), || {
+                            ArrayData::new_of_tables().into()
+                        }) {
+                            Value::Array(ref mut array) => array,
+                            _ => {
+                                // TODO: Use different error here?
+                                return self.err(KeyDefinedTwice {
+                                    pos: pos,
+                                    original: pos, // TODO: Handle correctly?
+                                });
+                            }
+                        };
+
+                        let mut table =
+                            match array.push_value(Value::Table(TableData::new_regular())) {
+                                Ok(table) => table,
+                                Err(message) => {
+                                    return self.err(WrongValueTypeInArray {
+                                        start: pos, // TODO: Find out if this is even relevant
+                                        pos: pos,
+                                        message: message,
+                                    });
+                                }
+                            };
+                        let mut table = match *table {
+                            Value::Table(ref mut table) => table,
+                            _ => unreachable!(),
+                        };
+                        self.read_table(table)?;
+                    }
+                    document.push_array_scope(scope);
                 }
                 (_, Comment(text)) => {
-                    top_table.push_comment(text);
+                    document.push_comment(text);
                 }
                 (pos, PlainKey(text)) => {
                     let key = Key::Plain(text);
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
-                    top_table.insert_spaced(key, value, before_eq, after_eq);
+                    document.root().insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, String { text, literal, multiline }) => {
                     let key = Key::String {
@@ -691,7 +697,7 @@ impl<'a> Parser<'a> {
                         multiline: multiline,
                     };
                     let (key, before_eq, after_eq, value) = self.read_item(pos, key)?;
-                    top_table.insert_spaced(key, value, before_eq, after_eq);
+                    document.root().insert_spaced(key, value, before_eq, after_eq);
                 }
                 (pos, _) => {
                     return self.err(InvalidTableItem { pos: pos });
@@ -699,6 +705,6 @@ impl<'a> Parser<'a> {
             }
         }
         trace!("Parse: Finished succesfully!");
-        Ok(top_table)
+        Ok(document)
     }
 }
