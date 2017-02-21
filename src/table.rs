@@ -6,19 +6,19 @@ use std::collections::{HashMap, hash_map};
 
 /// A format item for a TOML table.
 #[derive(Debug)]
-pub enum TableItem<'a> {
-    Space(&'a str),
-    Newline(&'a str),
-    Comment(&'a str),
+pub enum TableItem<'src> {
+    Space(&'src str),
+    Newline(&'src str),
+    Comment(&'src str),
     Entry {
-        key: Key<'a>,
-        before_eq: &'a str,
-        after_eq: &'a str,
+        key: Key<'src>,
+        before_eq: &'src str,
+        after_eq: &'src str,
     },
     /// For inline tables
     Comma,
 }
-impl<'a> TableItem<'a> {
+impl<'src> TableItem<'src> {
     fn is_newline(&self) -> bool {
         if let &TableItem::Newline(_) = self {
             true
@@ -42,15 +42,15 @@ pub enum CreatePathError {
 
 /// A TOML table.
 #[derive(Debug)]
-pub struct TableData<'a> {
+pub struct TableData<'src> {
     pub inline: bool,
-    pub order: Vec<TableItem<'a>>,
-    pub items: HashMap<Key<'a>, Value<'a>>,
+    pub order: Vec<TableItem<'src>>,
+    pub items: HashMap<Key<'src>, Value<'src>>,
 }
 
-impl<'a> TableData<'a> {
+impl<'src> TableData<'src> {
     /// Creates a new table.
-    fn new(inline: bool) -> TableData<'a> {
+    fn new(inline: bool) -> TableData<'src> {
         TableData {
             inline: inline,
             order: Vec::new(),
@@ -59,17 +59,17 @@ impl<'a> TableData<'a> {
     }
 
     /// Creates a new regular TOML table.
-    pub fn new_regular() -> TableData<'a> {
+    pub fn new_regular() -> TableData<'src> {
         TableData::new(false)
     }
 
     /// Creates a new inline TOML table.
-    pub fn new_inline() -> TableData<'a> {
+    pub fn new_inline() -> TableData<'src> {
         TableData::new(true)
     }
 
     /// Pushes a space to the format order.
-    pub fn push_space(&mut self, space: &'a str) {
+    pub fn push_space(&mut self, space: &'src str) {
         self.order.push(TableItem::Space(space));
     }
 
@@ -87,16 +87,19 @@ impl<'a> TableData<'a> {
 
     /// Pushes a comment to the format order.
     /// Note: Only for regular tables.
-    pub fn push_comment(&mut self, comment: &'a str) {
+    pub fn push_comment(&mut self, comment: &'src str) {
         self.order.push(TableItem::Comment(comment));
     }
 
     /// Inserts the given key as an entry to the table with the given sapce.
-    pub fn insert_spaced<K: Into<Key<'a>>>(&mut self,
+    pub fn insert_spaced<K, V>(&mut self,
                                            key: K,
-                                           value: Value<'a>,
-                                           before_eq: Option<&'a str>,
-                                           after_eq: Option<&'a str>) {
+                                           value: V,
+                                           before_eq: Option<&'src str>,
+                                           after_eq: Option<&'src str>) 
+                                         where K: Into<Key<'src>>,
+                                               V: Into<Value<'src>>
+                                         {
         let key = key.into();
         let entry = TableItem::Entry {
             key: key,
@@ -104,11 +107,11 @@ impl<'a> TableData<'a> {
             after_eq: after_eq.unwrap_or(""),
         };
         self.order.push(entry);
-        self.items.insert(key, value);
+        self.items.insert(key, value.into());
     }
 
     /// Attempts to find a value at the given path in the table.
-    pub fn find(&self, path: &[Key<'a>]) -> Option<&Value<'a>> {
+    pub fn find(&self, path: &[Key<'src>]) -> Option<&Value<'src>> {
         panic!("Broken!");
         if path.is_empty() {
             None
@@ -130,7 +133,7 @@ impl<'a> TableData<'a> {
     }
 
     /// Attempts to find a value at the given path in the table.
-    pub fn find_mut(&mut self, path: &[Key<'a>]) -> Option<&mut Value<'a>> {
+    pub fn find_mut(&mut self, path: &[Key<'src>]) -> Option<&mut Value<'src>> {
         panic!("Broken!");
         if path.is_empty() {
             None
@@ -152,7 +155,7 @@ impl<'a> TableData<'a> {
     }
 
     /// Unimplemented.
-    pub fn find_or_create_array_table(&mut self, path: &[Key<'a>]) -> &mut TableData<'a> {
+    pub fn find_or_create_array_table(&mut self, path: &[Key<'src>]) -> &mut TableData<'src> {
         if path.is_empty() {
             self
         } else {
@@ -161,18 +164,18 @@ impl<'a> TableData<'a> {
     }
 
     /// Returns a reference to the value at the given key in this table, if present.
-    pub fn get<K: Into<Key<'a>>>(&self, key: K) -> Option<&Value<'a>> {
+    pub fn get<K: Into<Key<'src>>>(&self, key: K) -> Option<&Value<'src>> {
         self.items.get(&key.into())
     }
 
     /// Returns a mutable reference to the value at the given key in this table, if
     /// present.
-    pub fn get_mut<K: Into<Key<'a>>>(&mut self, key: K) -> Option<&mut Value<'a>> {
+    pub fn get_mut<K: Into<Key<'src>>>(&mut self, key: K) -> Option<&mut Value<'src>> {
         self.items.get_mut(&key.into())
     }
 
     /// Returns whether the given key exists in the table.
-    pub fn contains_key<K: Into<Key<'a>>>(&self, key: K) -> bool {
+    pub fn contains_key<K: Into<Key<'src>>>(&self, key: K) -> bool {
         self.items.contains_key(&key.into())
     }
 
@@ -182,7 +185,7 @@ impl<'a> TableData<'a> {
     }
 
     /// Removes an item from this table if present.
-    pub fn remove(&mut self, key: &Key<'a>) -> Option<Value<'a>> {
+    pub fn remove(&mut self, key: &Key<'src>) -> Option<Value<'src>> {
         self.items.remove(key)
     }
 
@@ -201,7 +204,7 @@ impl<'a> TableData<'a> {
     }
 
     /// Returns the last indentation of a key/value pair in the table.
-    pub fn last_indent(&mut self) -> &'a str {
+    pub fn last_indent(&mut self) -> &'src str {
         use self::TableItem::*;
         let mut last_was_entry = false;
         let mut after_newline = false;
@@ -230,17 +233,17 @@ impl<'a> TableData<'a> {
     }
 
     /// Iterates over the keys and values in the table.
-    pub fn iter(&self) -> hash_map::Iter<Key<'a>, Value<'a>> {
+    pub fn iter(&self) -> hash_map::Iter<Key<'src>, Value<'src>> {
         self.items.iter()
     }
 
     /// Iterates mutably over the keys and values in the table.
-    pub fn iter_mut(&mut self) -> hash_map::IterMut<Key<'a>, Value<'a>> {
+    pub fn iter_mut(&mut self) -> hash_map::IterMut<Key<'src>, Value<'src>> {
         self.items.iter_mut()
     }
 
     /// Pushes the given items before the last space in the table
-    fn push_before_space(&mut self, items: Vec<TableItem<'a>>) {
+    fn push_before_space(&mut self, items: Vec<TableItem<'src>>) {
         if self.order.is_empty() {
             self.order.extend(items);
         } else {
@@ -277,8 +280,8 @@ impl<'a> TableData<'a> {
     /// Inserts a new item into the table.
     /// Note: This function attempts to be smart with the formatting.
     pub fn insert<K, V>(&mut self, key: K, value: V)
-        where K: Into<Key<'a>>,
-              V: Into<Value<'a>>
+        where K: Into<Key<'src>>,
+              V: Into<Value<'src>>
     {
         use self::TableItem::*;
         let key = key.into();
@@ -330,12 +333,8 @@ impl<'a> TableData<'a> {
         self.inline
     }
 
-    pub fn write(&self, out: &mut String) {
-        self.write_with_root(out);
-    }
-
     /// Writes the TOML representation of this value to a string.
-    pub fn write_with_root(&self, out: &mut String) {
+    pub fn write(&self, out: &mut String) {
         use self::TableItem::*;
         if self.inline {
             out.push('{');
@@ -363,11 +362,11 @@ impl<'a> TableData<'a> {
     }
     
     /*fn find_or_insert_with_slice<F, T>(&mut self,
-                                       path: &[Key<'a>],
+                                       path: &[Key<'src>],
                                        default: F)
-                                       -> Result<&mut Value<'a>, CreatePathError>
+                                       -> Result<&mut Value<'src>, CreatePathError>
         where F: FnOnce() -> T,
-              T: Into<Value<'a>>
+              T: Into<Value<'src>>
     {
         match *path {
             [key] => {
@@ -425,13 +424,13 @@ impl<'a> TableData<'a> {
     fn find_or_insert_with<I, P, F, T>(&mut self,
                                            path: P,
                                            default: F)
-                                           -> Result<&mut Value<'a>, CreatePathError>
+                                           -> Result<&mut Value<'src>, CreatePathError>
         where P: IntoIterator<Item = I>,
-              I: Into<Key<'a>>,
+              I: Into<Key<'src>>,
               F: FnOnce() -> T,
-              T: Into<Value<'a>>
+              T: Into<Value<'src>>
     {
-        let path: Vec<Key<'a>> = path.into_iter().map(|k| k.into()).collect();
+        let path: Vec<Key<'src>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::EmptyPath);
         }
@@ -440,24 +439,24 @@ impl<'a> TableData<'a> {
 }
 
 /*pub trait TableDataPrivate {
-    fn find_or_insert_table<'a, I, P>(&mut self,
+    fn find_or_insert_table<'src, I, P>(&mut self,
                                       path: P)
-                                      -> Result<&mut TableData<'a>, CreatePathError>
+                                      -> Result<&mut TableData<'src>, CreatePathError>
         where P: IntoIterator<Item = I>,
-              I: Into<Key<'a>>;
+              I: Into<Key<'src>>;
 }
 
 impl<'b> TableDataPrivate for TableData<'b> {
     /// Returns the table at the given path, creating intermediate tables if they don't 
     /// exist. The intermediate tables are by default non-inlined. For a more custom 
     /// version see 'find_or_insert_with'.
-    fn find_or_insert_table<'a, I, P>(&mut self,
+    fn find_or_insert_table<'src, I, P>(&mut self,
                                       path: P)
-                                      -> Result<&mut TableData<'a>, CreatePathError>
+                                      -> Result<&mut TableData<'src>, CreatePathError>
         where P: IntoIterator<Item = I>,
-              I: Into<Key<'a>>
+              I: Into<Key<'src>>
     {
-        let path: Vec<Key<'a>> = path.into_iter().map(|k| k.into()).collect();
+        let path: Vec<Key<'src>> = path.into_iter().map(|k| k.into()).collect();
         if path.is_empty() {
             return Err(CreatePathError::InvalidScopeTable);
         }

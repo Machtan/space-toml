@@ -31,33 +31,31 @@ fn main() {
     "#;
 
     match space_toml::parse(simple) {
-        Ok(mut table) => {
+        Ok(mut document) => {
             println!("Yay!");
             println!("Written output:");
             let mut out = String::new();
-            table.write(&mut out);
+            document.write(&mut out);
             println!("{}", out);
             assert_eq!(simple, &out);
             println!("Parsed table written and validated!");
 
-            table.find_or_insert_with(&["hello"], || Table::new_regular())
+            document.find_or_insert_table(&["hello"])
                 .expect("Could not find table 'hello'")
-                .table_mut()
-                .unwrap()
                 .insert("test", "value");
 
-            table.find_or_insert_table(&["bob", "something"])
+            document.find_or_insert_table(&["bob", "something"])
                 .expect("Could not find bob.something")
                 .insert("Hello snorri", "Would you care,\n for a cuppa\"\" value?");
 
-            table.insert("What_now_Smorri",
+            document.root().insert("What_now_Smorri",
                          "More strings, since other values aren't implemented yet");
-            table.insert("test",
+            document.root().insert("test",
                          "This should be more indented, despite also being programatically \
                           inserted");
 
             let mut changed = String::new();
-            table.write(&mut changed);
+            document.write(&mut changed);
             println!("Changed:");
             println!("{}", changed);
         }

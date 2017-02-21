@@ -3,6 +3,8 @@ use table::{TableData};
 use scope::Scope;
 use key::Key;
 use value::Value;
+use std::iter::IntoIterator;
+use std::collections::hash_map;
 
 /// A TOML table. This is a map from strings to a TOML values.
 pub struct Table<'src: 'doc, 'doc> {
@@ -18,7 +20,9 @@ impl<'src, 'doc> Table<'src, 'doc> {
             order: order,
         }
     }
-
+    
+    /// Returns the value for the given key, optionally inserting a value
+    /// using the provided function if the entry is empty.
     pub fn get_or_insert_with<F: FnOnce() -> Value<'src>>(&mut self,
                                                         key: Key<'src>,
                                                         default: F)
@@ -26,13 +30,71 @@ impl<'src, 'doc> Table<'src, 'doc> {
         self.data.items.entry(key).or_insert_with(default)
     }
 
-    /// Inserts the given key as an entry to the table with the given sapce.
-    pub fn insert_spaced<K: Into<Key<'src>>>(&mut self,
+    /// Inserts the given key as an entry to the table with the given spacing.
+    pub fn insert_spaced<K, V>(&mut self,
                                            key: K,
-                                           value: Value<'src>,
+                                           value: V,
                                            before_eq: Option<&'src str>,
-                                           after_eq: Option<&'src str>) {
+                                           after_eq: Option<&'src str>) 
+                                         where K: Into<Key<'src>>,
+                                               V: Into<Value<'src>>
+                                         {
+        
+        // TODO: validate spacing
         self.data.insert_spaced(key, value, before_eq, after_eq)
+    }
+    
+    /// Inserts the given key as an entry to the table with default spacing.
+    pub fn insert<K, V>(&mut self, key: K, value: V)
+        where K: Into<Key<'src>>,
+              V: Into<Value<'src>>
+    {
+        self.data.insert_spaced(key, value, Some(" "), Some(" "))
+    }
+    
+    /// Inserts a new item into the table.
+    /// Note: This function attempts to be smart with the formatting.
+    pub fn insert_smart<K, V>(&mut self, key: K, value: V)
+        where K: Into<Key<'src>>,
+              V: Into<Value<'src>>
+    {
+        self.data.insert(key, value)
+    }
+    
+    /// Returns a reference to the value at the given key in this table, if present.
+    pub fn get<K: Into<Key<'src>>>(&self, key: K) -> Option<&Value<'src>> {
+        self.data.get(key)
+    }
+
+    /// Returns a mutable reference to the value at the given key in this table, if
+    /// present.
+    pub fn get_mut<K: Into<Key<'src>>>(&mut self, key: K) -> Option<&mut Value<'src>> {
+        self.data.get_mut(key)
+    }
+
+    /// Returns whether the given key exists in the table.
+    pub fn contains_key<K: Into<Key<'src>>>(&self, key: K) -> bool {
+        self.data.contains_key(key)
+    }
+
+    /// Returns whether the table is empty. The table might still contain format items.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Removes an item from this table if present.
+    pub fn remove(&mut self, key: &Key<'src>) -> Option<Value<'src>> {
+        self.data.remove(key)
+    }
+    
+    /// Iterates over the keys and values in the table.
+    pub fn iter(&self) -> hash_map::Iter<Key<'src>, Value<'src>> {
+        self.data.iter()
+    }
+
+    /// Iterates mutably over the keys and values in the table.
+    pub fn iter_mut(&mut self) -> hash_map::IterMut<Key<'src>, Value<'src>> {
+        self.data.iter_mut()
     }
 }
 
@@ -47,12 +109,14 @@ impl<'src, 'doc> TablePrivate<'src, 'doc> for Table<'src, 'doc> {
 }
 
 /// An error found when creating or following a table path.
+#[derive(Debug)]
 pub enum InsertTableError {
     PathItemNotTable(String),
     EmptyPath,
 }
 
 /// A line-separating text sequence.
+#[derive(Debug, Clone, Copy)]
 pub enum Newline {
     /// '\n'
     Lf,
@@ -137,10 +201,18 @@ impl<'src> Document<'src> {
     }
 
     /// Finds or inserts a table at the given path.
-    pub fn find_or_insert_table<'doc>(&'doc mut self, path: &[Key<'src>]) -> Result<Table<'src, 'doc>, InsertTableError>
+    pub fn find_or_insert_table<'doc, I, V>(&'doc mut self, path: I) 
+        -> Result<Table<'src, 'doc>, InsertTableError> 
+        where I: IntoIterator<Item=V>, V: Into<Key<'src>>
     {
-        let (table_ref, order) = self.find_or_insert_table_internal(path)?;
+        let slice = path.into_iter().map(|v| v.into()).collect::<Vec<_>>();
+        let (table_ref, order) = self.find_or_insert_table_internal(&slice)?;
         Ok(Table::new(table_ref, order))
+    }
+    
+    /// Writes this document to a string.
+    pub fn write(&self, string: &mut String) {
+        unimplemented!();
     }
 }
 
