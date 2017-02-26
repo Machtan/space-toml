@@ -1,6 +1,6 @@
 
 use std::borrow::{Borrow, Cow};
-use table::TableData;
+use tabledata::TableData;
 use array::ArrayData;
 use utils::{write_string, escape_string, clean_string};
 

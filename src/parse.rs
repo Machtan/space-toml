@@ -5,9 +5,10 @@ use std::result;
 use std::error;
 
 use lexer::{self, Token, Tokens};
-use document::{Document, Table, TablePrivate, DocumentPrivate};
+use document::{Document, DocumentPrivate};
 use key::{Key, KeyPrivate};
-use table::{TableData, CreatePathError};
+use table::{Table, TablePrivate};
+use tabledata::{TableData, CreatePathError};
 use scope::Scope;
 use array::ArrayData;
 use value::{Value, ValuePrivate};

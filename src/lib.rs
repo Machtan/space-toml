@@ -18,6 +18,7 @@ mod lexer;
 mod parse;
 mod key;
 mod scope;
+mod tabledata;
 mod table;
 mod array;
 mod value;
@@ -28,7 +29,8 @@ pub use lexer::{tokens, Tokens, Token};
 pub type LexError<'a> = lexer::Error<'a>;
 /// The kinds of errors that can be found when lexing a TOML document.
 pub type LexerErrorKind = lexer::ErrorKind;
-pub use document::{Document, Table};
-pub use table::CreatePathError;
+pub use document::{Document};
+pub use tabledata::CreatePathError;
+pub use table::{Table};
 pub use value::{Value, Int, Float, TomlString};
 pub use parse::{parse, Error, ErrorKind, Result};
